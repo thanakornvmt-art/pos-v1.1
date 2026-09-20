@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
+import { z } from "zod";
 import { channels } from "../src/domain/schema";
 const db = new PrismaClient();
 async function main() {
@@ -9,9 +10,16 @@ async function main() {
     console.log("มีข้อมูลแล้ว ข้าม seed เพื่อไม่ทับข้อมูลร้าน");
     return;
   }
-  const pins = await Promise.all(
-    ["1234", "2345", "3456"].map((p) => hash(p, 12)),
+  const localDatabase = ["localhost", "127.0.0.1", "[::1]"].includes(
+    new URL(process.env.DATABASE_URL ?? "").hostname,
   );
+  const pinSchema = z.string().regex(/^\d{4}$/);
+  const seedPins = z.array(pinSchema).length(3).parse([
+    process.env.SEED_OWNER_PIN ?? (localDatabase ? "1234" : undefined),
+    process.env.SEED_CASHIER_PIN ?? (localDatabase ? "2345" : undefined),
+    process.env.SEED_KITCHEN_PIN ?? (localDatabase ? "3456" : undefined),
+  ]);
+  const pins = await Promise.all(seedPins.map((p) => hash(p, 12)));
   await db.$transaction(
     async (tx) => {
       await tx.settings.create({
@@ -306,6 +314,6 @@ async function main() {
     },
     { timeout: 30000 },
   );
-  console.log("ข้อมูลทดลองพร้อมใช้: เจ้าของ 1234 / แคชเชียร์ 2345 / ครัว 3456");
+  console.log("ข้อมูลทดลองพร้อมใช้ เข้าสู่ระบบด้วย PIN ที่กำหนดสำหรับแต่ละบัญชี");
 }
 main().finally(() => db.$disconnect());

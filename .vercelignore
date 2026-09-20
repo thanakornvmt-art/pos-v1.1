@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+.local
+.next
+.pnpm-store
+node_modules
+artifacts
+output
+tmp
+test-results
+playwright-report
+*.tsbuildinfo

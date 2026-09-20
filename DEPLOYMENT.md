@@ -43,7 +43,7 @@ Vercel จะใช้คำสั่งใน `package.json` ซึ่งรั
 
 ## 4. สร้างตารางและ seed demo data
 
-หลัง deploy ครั้งแรก ให้รันคำสั่งต่อไปนี้โดยใช้ environment ของ production/demo
+ก่อนเปิดเว็บให้ทดลอง ให้รันคำสั่งต่อไปนี้โดยใช้ environment ของ production/demo
 
 ```bash
 pnpm deploy:check
@@ -52,6 +52,8 @@ pnpm deploy:seed
 ```
 
 Seed จะทำงานเมื่อ `SEED_DEMO=true` และจะข้ามทันทีถ้ามีข้อมูลร้านอยู่แล้ว เพื่อไม่ทับข้อมูลจริง
+
+ฐานข้อมูลออนไลน์ต้องกำหนด `SEED_OWNER_PIN`, `SEED_CASHIER_PIN` และ `SEED_KITCHEN_PIN` เป็น PIN 4 หลักใหม่ใน environment ของคำสั่ง seed ด้วย ระบบจะไม่ใช้ PIN ตัวอย่างในเครื่องกับฐานข้อมูลออนไลน์ เก็บ PIN เหล่านี้เป็นความลับ และไม่จำเป็นต้องใส่ไว้ใน environment ของเว็บหลัง seed เสร็จ
 
 ## 5. ก่อนส่งลิงก์ให้คนอื่น
 
