@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+.env.local
+playwright-report/
+test-results/
+*.tsbuildinfo
+.local/
+.pnpm-store/
+tmp/
+artifacts/
+output/

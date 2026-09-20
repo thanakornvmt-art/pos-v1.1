@@ -1,0 +1,417 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+enum Role {
+  OWNER
+  CASHIER
+  KITCHEN
+}
+enum Channel {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+  GRAB
+  LINEMAN
+  SHOPEE
+}
+enum OrderStatus {
+  PAID
+  VOIDED
+}
+enum PaymentMethod {
+  CASH
+  PROMPTPAY
+  CARD
+  COD
+  CREDIT
+}
+enum MovementType {
+  RECEIVE
+  SALE
+  WASTE
+  ADJUST
+  COUNT
+  REVERSAL
+}
+enum CountStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+model MenuImage {
+  id String @id @default(uuid())
+  data Bytes
+  createdAt DateTime @default(now())
+  @@map("menu_images")
+}
+model User {
+  id String @id @default(uuid())
+  name String
+  pinHash String @map("pin_hash")
+  role Role
+  active Boolean @default(true)
+  failedAttempts Int @default(0)
+  authVersion Int @default(0)
+  lockedUntil DateTime?
+  orders Order[]
+  movements StockMovement[]
+  counts StockCount[]
+  auditLogs AuditLog[]
+  @@map("users")
+}
+model Settings {
+  id String @id @default("store")
+  shopName String
+  currency String @default("THB")
+  timezone String @default("Asia/Bangkok")
+  taxBps Int @default(0)
+  offlineHours Int @default(12)
+  syncGraceDays Int @default(7)
+  promptpayId String?
+  qrExpirySeconds Int @default(300)
+  safetyDays Int?
+  leadTimeDays Int?
+  updatedAt DateTime @updatedAt
+  @@map("settings")
+}
+model ChannelSetting {
+  channel Channel @id
+  feeBps Int @default(0)
+  @@map("channel_settings")
+}
+model Category {
+  id String @id @default(uuid())
+  name String
+  sortOrder Int @map("sort_order")
+  color String
+  items MenuItem[]
+  @@map("categories")
+}
+model MenuItem {
+  id String @id @default(uuid())
+  sku String @unique
+  name String
+  categoryId String @map("category_id")
+  category Category @relation(fields: [categoryId], references: [id])
+  imageUrl String @map("image_url")
+  isActive Boolean @default(true) @map("is_active")
+  prepSeconds Int @map("prep_seconds")
+  soldOut Boolean @default(false)
+  prices MenuPrice[]
+  optionGroups MenuOptionGroup[]
+  bom BomLine[]
+  packaging PackagingRule[]
+  orderLines OrderLine[]
+  @@map("menu_items")
+}
+model MenuPrice {
+  id String @id @default(uuid())
+  menuItemId String @map("menu_item_id")
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+  channel Channel
+  price Int
+  @@unique([menuItemId, channel])
+  @@map("menu_prices")
+}
+model OptionGroup {
+  id String @id @default(uuid())
+  name String
+  minSelect Int @map("min_select")
+  maxSelect Int @map("max_select")
+  isRequired Boolean @map("is_required")
+  items OptionItem[]
+  menus MenuOptionGroup[]
+  @@map("option_groups")
+}
+model MenuOptionGroup {
+  menuItemId String
+  optionGroupId String
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+  optionGroup OptionGroup @relation(fields: [optionGroupId], references: [id])
+  @@id([menuItemId, optionGroupId])
+}
+model OptionItem {
+  id String @id @default(uuid())
+  groupId String @map("group_id")
+  group OptionGroup @relation(fields: [groupId], references: [id])
+  name String
+  priceDelta Int @map("price_delta")
+  ingredientId String? @map("ingredient_id")
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id])
+  qtyDelta Decimal? @db.Decimal(18, 6) @map("qty_delta")
+  @@map("option_items")
+}
+model Ingredient {
+  id String @id @default(uuid())
+  name String
+  active Boolean @default(true)
+  purchaseUnit String @map("purchase_unit")
+  usageUnit String @map("usage_unit")
+  conversionRate Decimal @db.Decimal(18, 6) @map("conversion_rate")
+  yieldPercent Decimal @db.Decimal(7, 4) @map("yield_percent")
+  avgCost Decimal @db.Decimal(20, 8) @map("avg_cost")
+  currentQty Decimal @db.Decimal(18, 6) @map("current_qty")
+  parLevel Decimal @db.Decimal(18, 6) @map("par_level")
+  reorderPoint Decimal @db.Decimal(18, 6) @map("reorder_point")
+  isPerishable Boolean @map("is_perishable")
+  shelfLifeDays Int? @map("shelf_life_days")
+  supplierId String?
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
+  options OptionItem[]
+  recipeLines SubRecipeLine[]
+  bomLines BomLine[]
+  packaging PackagingRule[]
+  movements StockMovement[]
+  countLines StockCountLine[]
+  batches StockBatch[]
+  @@map("ingredients")
+}
+model SubRecipe {
+  id String @id @default(uuid())
+  name String
+  outputQty Decimal @db.Decimal(18, 6) @map("output_qty")
+  outputUnit String @map("output_unit")
+  lines SubRecipeLine[] @relation("RecipeLines")
+  usedBy SubRecipeLine[] @relation("NestedRecipe")
+  bomLines BomLine[]
+  @@map("sub_recipes")
+}
+model SubRecipeLine {
+  id String @id @default(uuid())
+  subRecipeId String @map("sub_recipe_id")
+  subRecipe SubRecipe @relation("RecipeLines", fields: [subRecipeId], references: [id])
+  ingredientId String? @map("ingredient_id")
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id])
+  childRecipeId String?
+  childRecipe SubRecipe? @relation("NestedRecipe", fields: [childRecipeId], references: [id])
+  qty Decimal @db.Decimal(18, 6)
+  @@map("sub_recipe_lines")
+}
+model BomLine {
+  id String @id @default(uuid())
+  menuItemId String @map("menu_item_id")
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+  ingredientId String? @map("ingredient_id")
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id])
+  subRecipeId String? @map("sub_recipe_id")
+  subRecipe SubRecipe? @relation(fields: [subRecipeId], references: [id])
+  qty Decimal @db.Decimal(18, 6)
+  unit String
+  @@map("bom_lines")
+}
+model PackagingRule {
+  id String @id @default(uuid())
+  menuItemId String
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+  channel Channel
+  ingredientId String
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  qty Decimal @db.Decimal(18, 6)
+  @@unique([menuItemId, channel, ingredientId])
+}
+model Device {
+  id String @id
+  prefix String @unique
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  orders Order[]
+}
+model CatalogSnapshot {
+  id String @id
+  data Json
+  createdAt DateTime @default(now())
+  orders Order[]
+}
+model Order {
+  id String @id @default(uuid())
+  clientUuid String @unique @map("client_uuid")
+  payloadHash String
+  deviceId String
+  device Device @relation(fields: [deviceId], references: [id])
+  catalogId String
+  catalog CatalogSnapshot @relation(fields: [catalogId], references: [id])
+  orderNo String @unique @map("order_no")
+  localSequence Int
+  queueNo String @map("queue_no")
+  channel Channel
+  status OrderStatus @default(PAID)
+  fulfillmentStage String @default("RECEIVED")
+  subtotal Int
+  discount Int
+  tax Int
+  total Int
+  platformFeePercent Decimal @db.Decimal(7, 4) @map("platform_fee_percent")
+  platformFee Int
+  netPayout Int @map("net_payout")
+  ingredientCost Int
+  packagingCost Int
+  grossProfit Int
+  createdBy String @map("created_by")
+  user User @relation(fields: [createdBy], references: [id])
+  createdAt DateTime @map("created_at")
+  syncedAt DateTime @default(now()) @map("synced_at")
+  voidedAt DateTime?
+  voidReason String?
+  deletedAt DateTime?
+  lines OrderLine[]
+  payments Payment[]
+  @@unique([deviceId, localSequence])
+  @@index([createdAt, status])
+  @@map("orders")
+}
+model OrderLine {
+  id String @id @default(uuid())
+  orderId String @map("order_id")
+  order Order @relation(fields: [orderId], references: [id])
+  menuItemId String @map("menu_item_id")
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+  menuName String
+  qty Int
+  unitPrice Int @map("unit_price")
+  optionsJson Json @map("options_json")
+  lineTotal Int @map("line_total")
+  ingredientCost Int @default(0)
+  packagingCost Int @default(0)
+  netPayout Int @default(0)
+  note String
+  @@map("order_lines")
+}
+model Payment {
+  id String @id @default(uuid())
+  orderId String @map("order_id")
+  order Order @relation(fields: [orderId], references: [id])
+  method PaymentMethod
+  amount Int
+  tendered Int
+  change Int
+  refNo String? @map("ref_no")
+  reversedAt DateTime?
+  @@map("payments")
+}
+model StockMovement {
+  id String @id @default(uuid())
+  ingredientId String @map("ingredient_id")
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  type MovementType
+  qtyDelta Decimal @db.Decimal(18, 6) @map("qty_delta")
+  costAtTime Decimal @db.Decimal(20, 8) @map("cost_at_time")
+  refType String @map("ref_type")
+  refId String @map("ref_id")
+  reason String
+  createdBy String @map("created_by")
+  user User @relation(fields: [createdBy], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+  reversalOfId String? @unique
+  batchAllocations Json @default("[]")
+  @@index([refType, refId])
+  @@map("stock_movements")
+}
+model StockCount {
+  id String @id @default(uuid())
+  countedAt DateTime @map("counted_at")
+  status CountStatus @default(DRAFT)
+  countedBy String @map("counted_by")
+  user User @relation(fields: [countedBy], references: [id])
+  lines StockCountLine[]
+  @@map("stock_counts")
+}
+model StockCountLine {
+  id String @id @default(uuid())
+  countId String @map("count_id")
+  count StockCount @relation(fields: [countId], references: [id])
+  ingredientId String @map("ingredient_id")
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  systemQty Decimal @db.Decimal(18, 6) @map("system_qty")
+  actualQty Decimal @db.Decimal(18, 6) @map("actual_qty")
+  variance Decimal @db.Decimal(18, 6)
+  @@unique([countId, ingredientId])
+  @@map("stock_count_lines")
+}
+model Supplier {
+  id String @id @default(uuid())
+  name String
+  phone String
+  lineId String @map("line_id")
+  ingredients Ingredient[]
+  receipts StockReceipt[]
+  @@map("suppliers")
+}
+model AuditLog {
+  id String @id @default(uuid())
+  clientUuid String? @unique
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  action String
+  entity String
+  entityId String @map("entity_id")
+  beforeJson Json @map("before_json")
+  afterJson Json @map("after_json")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+model StockBatch {
+  id String @id @default(uuid())
+  ingredientId String
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  receiptId String
+  receipt StockReceipt @relation(fields: [receiptId], references: [id])
+  receivedQty Decimal @db.Decimal(18, 6)
+  remainingQty Decimal @db.Decimal(18, 6)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([ingredientId, expiresAt])
+}
+model StockReceipt {
+  id String @id
+  supplierId String
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  createdBy String
+  createdAt DateTime @default(now())
+  batches StockBatch[]
+}
+model StockOperation {
+  id String @id
+  kind String
+  payloadHash String
+  createdAt DateTime @default(now())
+}
+model PurchaseOrder {
+  id String @id @default(uuid())
+  status String @default("DRAFT")
+  lines Json
+  parameters Json
+  createdBy String
+  createdAt DateTime @default(now())
+}
+model DeliveryTicket {
+  id String @id
+  channel Channel
+  externalRef String
+  lines Json
+  total Int
+  netPayout Int
+  stage String @default("RECEIVED")
+  paidOrderUuid String? @unique
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  catalogId String
+  @@unique([channel, externalRef])
+}
+model CashClose {
+  id String @id @default(uuid())
+  businessDate String @unique
+  openingCash Int
+  expectedCash Int
+  actualCash Int
+  variance Int
+  reason String
+  createdBy String
+  createdAt DateTime @default(now())
+}
