@@ -1,7 +1,7 @@
 import { z } from "zod";
 export async function apiGet<T>(
   path: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
 ): Promise<T> {
   const r = await fetch(path, { cache: "no-store" });
   const data: unknown = await r.json();

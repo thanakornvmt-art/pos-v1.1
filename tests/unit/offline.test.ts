@@ -32,6 +32,38 @@ const payment = {
   verified: true,
 };
 describe("Offline-first", () => {
+  it("บันทึกรูปแบบบิล ณ เวลาขายเพื่อไม่ให้ใบเก่าเปลี่ยนตามการตั้งค่าใหม่", async () => {
+    const id = await draft();
+    const settings = {
+      paperWidth: "58" as const,
+      header: "หัวบิลเดิม",
+      footer: "ขอบคุณ",
+      showQueue: true,
+      showOptions: true,
+    };
+    const receiptBoot = {
+      ...boot,
+      catalog: {
+        ...boot.catalog,
+        settings: { ...boot.catalog.settings, receiptConfig: settings },
+      },
+    };
+    const saved = await checkout(
+      receiptBoot,
+      id,
+      [line],
+      "TAKEAWAY",
+      null,
+      payment,
+      crypto.randomUUID(),
+    );
+    settings.footer = "ข้อความใหม่";
+    const printed = await localDb.printJobs
+      .where("orderId")
+      .equals(saved.id)
+      .first();
+    expect(printed?.receipt.settings?.footer).toBe("ขอบคุณ");
+  });
   it("เก็บบิลและงานพิมพ์สองชุดแบบ atomic พร้อม sequence ไม่ซ้ำ", async () => {
     const a = await draft(),
       b = await draft();

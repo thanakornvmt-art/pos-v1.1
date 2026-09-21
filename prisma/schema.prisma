@@ -65,6 +65,7 @@ model User {
   @@map("users")
 }
 model Settings {
+  receiptConfig Json @default("{}")
   id String @id @default("store")
   shopName String
   currency String @default("THB")

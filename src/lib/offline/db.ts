@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
+import type { ReceiptSettings } from "@/domain/printing";
 import type {
   Bootstrap,
   CartLine,
@@ -15,6 +16,7 @@ export interface LocalOrder {
   receipt: Receipt;
 }
 export interface Receipt {
+  settings?: ReceiptSettings;
   shopName: string;
   queueNo: string;
   orderNo: string;
@@ -36,6 +38,11 @@ export interface Receipt {
   method: string;
 }
 export interface PrintJob {
+  lastAttempt?: {
+    at: string;
+    state: "sending" | "sent" | "failed";
+    error?: string;
+  };
   id: string;
   orderId: string;
   kind: "KITCHEN" | "CUSTOMER";

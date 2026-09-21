@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { receiptSettingsSchema } from "./printing";
 export const channels = [
   "DINE_IN",
   "TAKEAWAY",
@@ -57,6 +58,7 @@ export const menuSchema = z.object({
 });
 export const catalogSchema = z.object({
   settings: z.object({
+    receiptConfig: receiptSettingsSchema.optional(),
     shopName: z.string(),
     taxBps: z.number().int().min(0).max(10000),
     offlineHours: z.number().int().positive(),

@@ -59,6 +59,7 @@ export async function checkout(
         deliveryId: current.deliveryId,
       });
       const receipt: Receipt = {
+        settings: boot.catalog.settings.receiptConfig,
         shopName: boot.catalog.settings.shopName,
         queueNo,
         orderNo,
