@@ -124,11 +124,11 @@ export default function Employees() {
             {query.data?.employees.map((employee) => (
               <article
                 key={employee.id}
-                className="rounded-2xl border border-stone-200 bg-white p-5"
+                className="min-w-0 rounded-2xl border border-stone-200 bg-white p-3 sm:p-5"
               >
                 <div className="flex justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-bold">
+                  <div className="min-w-0">
+                    <h2 className="break-words text-xl font-bold">
                       {employee.name}
                       {employee.id === query.data?.currentUserId
                         ? " (คุณ)"
@@ -136,7 +136,9 @@ export default function Employees() {
                     </h2>
                     <p>{roleLabels[employee.role]}</p>
                   </div>
-                  <span>{employee.active ? "ใช้งาน" : "ปิดใช้งาน"}</span>
+                  <span className="shrink-0">
+                    {employee.active ? "ใช้งาน" : "ปิดใช้งาน"}
+                  </span>
                 </div>
                 {employee.lockedUntil &&
                   new Date(employee.lockedUntil) > new Date() && (
@@ -144,7 +146,7 @@ export default function Employees() {
                       พักการเข้าใช้ชั่วคราวจาก PIN ผิด
                     </p>
                   )}
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
                   <Button
                     variant="outline"
                     onClick={() => open("update", employee)}

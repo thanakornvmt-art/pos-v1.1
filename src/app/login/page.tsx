@@ -54,8 +54,8 @@ export default function Login() {
     }
   }
   return (
-    <main className="flex min-h-dvh items-center justify-center p-6">
-      <section className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 shadow-sm">
+    <main className="flex min-h-dvh items-center justify-center p-3 sm:p-6">
+      <section className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-8">
         <div className="mb-5 text-4xl">🍲</div>
         <h1 className="text-3xl font-bold">พร้อมเปิดร้านแล้ว</h1>
         <p className="my-3 text-stone-600">เลือกชื่อ แล้วใส่รหัส PIN 4 หลัก</p>

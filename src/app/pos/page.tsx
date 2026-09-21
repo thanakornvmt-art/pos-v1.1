@@ -43,6 +43,7 @@ export default function Pos() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [category, setCategory] = useState("all");
   const [search, setSearch] = useState("");
+  const [mobilePanel, setMobilePanel] = useState<"menu" | "cart">("menu");
   const [menu, setMenu] = useState<Menu | null>(null);
   const [editing, setEditing] = useState<CartLine | undefined>();
   const [payment, setPayment] = useState(false);
@@ -247,9 +248,36 @@ export default function Pos() {
           </a>
         </div>
       )}
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_350px] xl:grid-cols-[minmax(0,1fr)_370px]">
-        <section className="flex min-h-0 flex-col p-5">
-          <div className="mb-4 flex items-center gap-3">
+      <div className="flex shrink-0 gap-2 p-2 md:hidden">
+        <Button
+          className="flex-1 px-2"
+          variant={mobilePanel === "menu" ? "default" : "outline"}
+          onClick={() => setMobilePanel("menu")}
+          aria-pressed={mobilePanel === "menu"}
+        >
+          เมนูอาหาร
+        </Button>
+        <Button
+          className="flex-1 px-2"
+          variant={mobilePanel === "cart" ? "default" : "outline"}
+          onClick={() => setMobilePanel("cart")}
+          aria-pressed={mobilePanel === "cart"}
+        >
+          ตะกร้า ({priced.lines.reduce((n, l) => n + l.qty, 0)})
+        </Button>
+        <Button
+          variant="outline"
+          className="px-2"
+          onClick={() => setBillsOpen(true)}
+        >
+          พัก / รวมบิล
+        </Button>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_320px] lg:grid-cols-[minmax(0,1fr)_350px] xl:grid-cols-[minmax(0,1fr)_370px]">
+        <section
+          className={`${mobilePanel === "menu" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto p-2 md:flex md:overflow-hidden md:p-3 xl:p-5`}
+        >
+          <div className="mb-2 flex shrink-0 items-center gap-3 md:mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-5 text-stone-500" />
               <input
@@ -260,10 +288,13 @@ export default function Pos() {
                 className="pl-12"
               />
             </div>
-            <span className="text-stone-600">{boot.user.name}</span>
+            <span className="hidden text-stone-600 xl:block">
+              {boot.user.name}
+            </span>
           </div>
-          <div className="mb-4 flex shrink-0 gap-2 overflow-x-auto">
+          <div className="mb-2 flex shrink-0 gap-2 overflow-x-auto md:mb-4">
             <Button
+              className="shrink-0"
               variant={category === "all" ? "default" : "outline"}
               onClick={() => setCategory("all")}
             >
@@ -271,7 +302,7 @@ export default function Pos() {
             </Button>
             {catalog.categories.map((c) => (
               <Button
-                className="whitespace-nowrap"
+                className="shrink-0 whitespace-nowrap"
                 variant={category === c.id ? "default" : "outline"}
                 key={c.id}
                 onClick={() => setCategory(c.id)}
@@ -280,7 +311,7 @@ export default function Pos() {
               </Button>
             ))}
           </div>
-          <div className="grid min-h-0 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-2 2xl:grid-cols-3">
+          <div className="grid shrink-0 auto-rows-min grid-cols-2 gap-2 pb-2 md:min-h-0 md:shrink md:overflow-y-auto lg:grid-cols-3 xl:gap-3 2xl:grid-cols-4">
             {catalog.menus
               .filter(
                 (m) =>
@@ -317,7 +348,7 @@ export default function Pos() {
                     alt=""
                     className="h-28 w-full object-cover"
                   />
-                  <div className="p-4">
+                  <div className="p-2 xl:p-4">
                     <p className="text-xl font-bold">
                       {m.name}
                       {availability.data?.find((a) => a.id === m.id)?.soldOut &&
@@ -339,8 +370,10 @@ export default function Pos() {
               ))}
           </div>
         </section>
-        <aside className="flex min-h-0 flex-col border-l border-stone-200 bg-white p-4">
-          <div className="mb-3 flex justify-between">
+        <aside
+          className={`${mobilePanel === "cart" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto border-l border-stone-200 bg-white p-2 md:flex md:overflow-hidden xl:p-4`}
+        >
+          <div className="mb-3 flex shrink-0 justify-between">
             <h2 className="text-2xl font-bold">บิลปัจจุบัน</h2>
             <span className="rounded-full bg-stone-100 px-3 py-1">
               {priced.lines.reduce((n, l) => n + l.qty, 0)} รายการ
@@ -361,7 +394,7 @@ export default function Pos() {
               </option>
             ))}
           </select>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+          <div className="shrink-0 space-y-3 md:min-h-0 md:flex-1 md:shrink md:overflow-y-auto">
             {priced.lines.length === 0 ? (
               <div className="py-12 text-center text-stone-500">
                 <Soup className="mx-auto mb-4" size={48} />
@@ -380,7 +413,7 @@ export default function Pos() {
                   <p className="text-stone-600">
                     {l.options.map((o) => o.name).join(", ")} {l.note}
                   </p>
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
                       onClick={() =>
@@ -425,7 +458,7 @@ export default function Pos() {
               ))
             )}
           </div>
-          <footer className="shrink-0 border-t pt-3">
+          <footer className="shrink-0 border-t pt-2">
             <div className="mb-2 flex gap-2">
               <Button
                 variant="ghost"
@@ -449,13 +482,13 @@ export default function Pos() {
                 ล้างบิล
               </Button>
             </div>
-            <div className="mb-3 flex items-end justify-between">
+            <div className="mb-3 hidden items-end justify-between md:flex">
               <span>ยอดรวม</span>
               <strong className="text-3xl">{formatMoney(priced.total)}</strong>
             </div>
             <Button
               data-testid="checkout"
-              className="w-full text-xl"
+              className="hidden w-full text-xl md:inline-flex"
               disabled={!draft.lines.length || expired}
               onClick={() => setPayment(true)}
             >
@@ -464,6 +497,22 @@ export default function Pos() {
           </footer>
         </aside>
       </div>
+      <footer className="flex shrink-0 items-center gap-2 border-t bg-white p-2 md:hidden">
+        <div className="min-w-0 flex-1">
+          <p>ยอดรวม</p>
+          <strong className="break-words text-2xl">
+            {formatMoney(priced.total)}
+          </strong>
+        </div>
+        <Button
+          data-testid="checkout-mobile"
+          className="text-xl"
+          disabled={!draft.lines.length || expired}
+          onClick={() => setPayment(true)}
+        >
+          ชำระเงิน <ArrowRight />
+        </Button>
+      </footer>
       {menu && (
         <Options
           initial={editing}

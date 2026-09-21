@@ -113,8 +113,12 @@ export default function Manage() {
   ) => (
     <div className="space-y-2">
       {lines.map((line, index) => (
-        <div className="grid grid-cols-[1fr_120px_64px] gap-2" key={index}>
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_64px] gap-2 sm:grid-cols-[minmax(0,1fr)_120px_64px]"
+          key={index}
+        >
           <select
+            className="col-span-2 sm:col-span-1"
             aria-label={`วัตถุดิบหรือสูตร ${index + 1}`}
             value={
               line.ingredientId

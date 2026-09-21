@@ -154,13 +154,42 @@ export function Payment({
       title="ชำระเงิน"
       description={`${draft.lines.reduce((n, l) => n + l.qty, 0)} รายการ · ตรวจยอดและยืนยันรับเงิน`}
       wide
+      footer={
+        <div>
+          <p role="status" className="text-red-700">
+            {error}
+          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p>ยอดชำระ</p>
+              <strong className="text-2xl">{formatMoney(priced.total)}</strong>
+            </div>
+            <Button
+              data-testid="confirm-payment"
+              className="text-xl"
+              disabled={
+                busy ||
+                (method === "CASH"
+                  ? change < 0
+                  : !verified ||
+                    !refNo.trim() ||
+                    (method === "PROMPTPAY" && (!qr || remaining <= 0)))
+              }
+              onClick={() => void pay()}
+            >
+              {busy ? "กำลังบันทึก…" : "ยืนยันรับเงิน"}
+            </Button>
+          </div>
+        </div>
+      }
     >
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <section>
+      <div className="grid gap-3 pb-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <section className="min-w-0">
           <div className="grid grid-cols-2 gap-2">
             {methods.map((m) => (
               <Button
                 key={m.id}
+                className="px-2"
                 variant={method === m.id ? "default" : "outline"}
                 onClick={() => {
                   setMethod(m.id);
@@ -184,17 +213,22 @@ export function Payment({
                   onChange={(e) => setCash(e.target.value)}
                 />
               </label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 gap-2 min-[380px]:grid-cols-4">
                 {[100, 500, 1000].map((n) => (
                   <Button
                     key={n}
+                    className="px-2"
                     variant="outline"
                     onClick={() => setCash(String(n))}
                   >
                     {n}
                   </Button>
                 ))}
-                <Button variant="outline" onClick={() => setCash("")}>
+                <Button
+                  className="px-2"
+                  variant="outline"
+                  onClick={() => setCash("")}
+                >
                   พอดี
                 </Button>
               </div>
@@ -249,7 +283,7 @@ export function Payment({
             </div>
           )}
         </section>
-        <aside className="flex flex-col gap-3 rounded-2xl bg-white p-5">
+        <aside className="flex min-w-0 flex-col gap-3 rounded-2xl bg-white p-3 sm:p-5">
           <div className="flex justify-between">
             <span>ยอดรายการ</span>
             <span>{formatMoney(priced.subtotal)}</span>
@@ -267,30 +301,6 @@ export function Payment({
           <Button variant="outline" onClick={() => setDiscountOpen(true)}>
             ส่วนลด / เหตุผล
           </Button>
-          <div className="mt-auto border-t pt-4">
-            <p>ยอดชำระ</p>
-            <p className="my-2 text-4xl font-bold">
-              {formatMoney(priced.total)}
-            </p>
-            <p role="status" className="mb-3 text-red-700">
-              {error}
-            </p>
-            <Button
-              data-testid="confirm-payment"
-              className="w-full text-xl"
-              disabled={
-                busy ||
-                (method === "CASH"
-                  ? change < 0
-                  : !verified ||
-                    !refNo.trim() ||
-                    (method === "PROMPTPAY" && (!qr || remaining <= 0)))
-              }
-              onClick={() => void pay()}
-            >
-              {busy ? "กำลังบันทึก…" : "ยืนยันรับเงิน"}
-            </Button>
-          </div>
         </aside>
       </div>
       <Dialog
