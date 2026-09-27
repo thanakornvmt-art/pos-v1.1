@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Decimal from "decimal.js";
 import { z } from "zod";
 import {
@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { MenuImages } from "@/components/menu-images";
 export default function Manage() {
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["manage"],
     queryFn: () => apiGet("/api/manage", adminSchema),
@@ -49,6 +50,7 @@ export default function Manage() {
     try {
       await apiPost("/api/manage", confirmation.payload);
       await query.refetch();
+      await queryClient.invalidateQueries({ queryKey: ["availability"] });
       setConfirmation(null);
       setIngredient(null);
       setRecipe(null);
@@ -200,6 +202,7 @@ export default function Manage() {
           ["ingredients", "วัตถุดิบ"],
           ["recipes", "สูตรย่อย"],
           ["bom", "สูตรรายเมนู"],
+          ["menus", "เมนู / เปิด–ปิดขาย"],
           ["images", "รูปเมนู"],
           ["profit", "กำไรรายเมนู"],
           ["suppliers", "ซัพพลายเออร์"],
@@ -213,6 +216,46 @@ export default function Manage() {
           </Button>
         ))}
       </div>
+      {tab === "menus" && (
+        <section>
+          <p className="mb-4">
+            ปิดขายเพื่อซ่อนเมนูจากรายการขาย โดยเก็บสูตร ราคา รูป และประวัติเดิม
+            เครื่องออฟไลน์จะรับสถานะเมื่อเชื่อมต่อ
+          </p>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {data.menus.map((m) => (
+              <article key={m.id} className="rounded-2xl bg-white p-5">
+                <h2 className="text-xl font-bold">{m.name}</h2>
+                <p className={m.isActive ? "text-emerald-700" : "text-red-700"}>
+                  {m.isActive ? "เปิดขาย" : "ปิดขาย"}
+                </p>
+                {m.soldOut && (
+                  <p>ของหมดชั่วคราว · เปิดขายแล้วต้องยกเลิกสถานะของหมดด้วย</p>
+                )}
+                <Button
+                  className="mt-3"
+                  variant={m.isActive ? "outline" : "default"}
+                  disabled={busy}
+                  onClick={() => {
+                    setError("");
+                    setConfirmation({
+                      title: `ยืนยัน${m.isActive ? "ปิดขาย" : "เปิดขาย"} ${m.name}?`,
+                      payload: {
+                        kind: "menuActive",
+                        id: m.id,
+                        isActive: !m.isActive,
+                        confirmed: true,
+                      },
+                    });
+                  }}
+                >
+                  {m.isActive ? "ปิดขาย" : "เปิดขาย"}
+                </Button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       {tab === "images" && (
         <MenuImages menus={data.menus} reload={query.refetch} />
       )}
@@ -653,6 +696,13 @@ export default function Manage() {
         </p>
         <Button disabled={busy} onClick={() => void save()}>
           {busy ? "กำลังบันทึก…" : "ยืนยัน"}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => setConfirmation(null)}
+        >
+          ยกเลิก
         </Button>
       </Dialog>
       {error && !confirmation && (

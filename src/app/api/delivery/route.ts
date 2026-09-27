@@ -51,8 +51,27 @@ export async function GET() {
       }),
     ]);
     const linked = new Set(tickets.map((t) => t.paidOrderUuid));
+    const snapshots = await prisma.catalogSnapshot.findMany({
+      where: {
+        id: { in: [...new Set(tickets.map((ticket) => ticket.catalogId))] },
+      },
+      select: { id: true, data: true },
+    });
+    const ticketNames = new Map(
+      snapshots.map((saved) => [
+        saved.id,
+        Object.fromEntries(
+          catalogSchema
+            .parse(saved.data)
+            .menus.map((menu) => [menu.id, menu.name]),
+        ),
+      ]),
+    );
     const combined = [
-      ...tickets,
+      ...tickets.map((ticket) => ({
+        ...ticket,
+        menuNames: ticketNames.get(ticket.catalogId) ?? {},
+      })),
       ...orders
         .filter((o) => !linked.has(o.clientUuid))
         .map((o) => ({
@@ -75,6 +94,9 @@ export async function GET() {
           paidOrderUuid: o.clientUuid,
           createdAt: o.createdAt,
           catalogId: o.catalogId,
+          menuNames: Object.fromEntries(
+            o.lines.map((line) => [line.menuItemId, line.menuName]),
+          ),
         })),
     ];
     return Response.json({

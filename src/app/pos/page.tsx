@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
-import { apiGet } from "@/lib/client-api";
+import { menuIsOpen, menuCanBeAdded } from "@/domain/availability";
 import { liveQuery } from "dexie";
 import { Plus, Trash2, Soup, Search, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,18 +19,8 @@ import { localDb, type Draft } from "@/lib/offline/db";
 import { usePos } from "@/stores/pos";
 import { thaiDate } from "@/lib/utils";
 export default function Pos() {
-  const availability = useQuery({
-    queryKey: ["availability"],
-    queryFn: () =>
-      apiGet(
-        "/api/availability",
-        z.array(z.object({ id: z.string(), soldOut: z.boolean() })),
-      ),
-    refetchInterval: 3000,
-    retry: false,
-  });
   const runtime = useRuntime();
-  const { loaded } = runtime;
+  const { loaded, availability } = runtime;
   const { draft, setDraft, billsOpen, setBillsOpen } = usePos();
   const boot =
     draft?.userId === runtime.boot?.user.id &&
@@ -55,6 +43,15 @@ export default function Pos() {
   } | null>(null);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitQty, setSplitQty] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (menu && !menuCanBeAdded(menu.id, availability)) {
+      setMenu(null);
+      setEditing(undefined);
+      setError(
+        "เมนูนี้ปิดขายหรือหมดแล้ว เพิ่มรายการไม่ได้ แต่รับชำระรายการเดิมได้",
+      );
+    }
+  }, [menu, availability]);
   useEffect(() => {
     if (!boot) return;
     const sub = liveQuery(() =>
@@ -101,12 +98,29 @@ export default function Pos() {
   const catalog = boot.catalog;
   const priced = priceOrder(catalog, draft.channel, draft.lines);
   const expired = Date.now() >= boot.expiresAt;
-  async function save(lines: CartLine[], extra: Partial<Draft> = {}) {
+  async function save(
+    lines: CartLine[],
+    extra: Partial<Draft> = {},
+    existingLines = draft?.lines ?? [],
+  ) {
     if (!draft) return;
     if (draft.deliveryId)
       throw new Error(
         "รายการแพลตฟอร์มล็อกตามออเดอร์ต้นทาง กรุณาพักบิลนี้หากยังไม่พร้อมรับเงิน",
       );
+    for (const line of lines) {
+      const old = existingLines.find((item) => item.id === line.id);
+      if (
+        (!old ||
+          line.qty > old.qty ||
+          line.menuItemId !== old.menuItemId ||
+          JSON.stringify(line.optionIds) !== JSON.stringify(old.optionIds)) &&
+        !menuCanBeAdded(line.menuItemId, availability)
+      )
+        throw new Error(
+          "เมนูนี้ปิดขายหรือหมดแล้ว เพิ่มรายการไม่ได้ แต่รับชำระรายการเดิมได้",
+        );
+    }
     const next = {
       ...draft,
       ...extra,
@@ -173,6 +187,8 @@ export default function Pos() {
     await localDb.meta.put({ key: "selectedDraft", value: next.id });
     setDraft(next);
     setBillsOpen(false);
+    // In particular, leave a delivery ticket's catalog behind for the new bill.
+    if (runtime.online) void runtime.refresh();
   }
   async function split() {
     if (!draft || !boot) return;
@@ -223,7 +239,7 @@ export default function Pos() {
       localDb.audits,
       async () => {
         await audit("MERGE_BILL", lines);
-        await save(lines);
+        await save(lines, {}, [...draft.lines, ...other.lines]);
         await localDb.drafts.update(other.id, { lines: [] });
       },
     );
@@ -311,16 +327,28 @@ export default function Pos() {
               </Button>
             ))}
           </div>
+          {draft.lines.length > 0 &&
+            availability?.some(
+              (item) =>
+                item.isActive &&
+                !catalog.menus.some((known) => known.id === item.id),
+            ) && (
+              <p className="mb-2 rounded-xl bg-amber-50 p-3 text-amber-900">
+                มีเมนูเปิดขายเพิ่ม หากต้องการเลือกให้พักบิลนี้และเปิดบิลใหม่
+              </p>
+            )}
           <div className="grid shrink-0 auto-rows-min grid-cols-2 gap-2 pb-2 md:min-h-0 md:shrink md:overflow-y-auto lg:grid-cols-3 xl:gap-3 2xl:grid-cols-4">
             {catalog.menus
               .filter(
                 (m) =>
+                  menuIsOpen(m.id, availability) &&
                   (category === "all" || m.categoryId === category) &&
                   m.name.includes(search),
               )
               .map((m) => (
                 <button
                   key={m.id}
+                  data-testid={`menu-${m.id}`}
                   className="overflow-hidden rounded-2xl border border-stone-200 bg-white text-left shadow-sm focus-visible:ring-4 focus-visible:ring-amber-400"
                   onClick={() => {
                     setEditing(undefined);
@@ -338,10 +366,7 @@ export default function Pos() {
                       });
                     });
                   }}
-                  disabled={
-                    expired ||
-                    availability.data?.find((a) => a.id === m.id)?.soldOut
-                  }
+                  disabled={expired || !menuCanBeAdded(m.id, availability)}
                 >
                   <img
                     src={m.imageUrl || "/icon.svg"}
@@ -351,7 +376,7 @@ export default function Pos() {
                   <div className="p-2 xl:p-4">
                     <p className="text-xl font-bold">
                       {m.name}
-                      {availability.data?.find((a) => a.id === m.id)?.soldOut &&
+                      {availability?.find((a) => a.id === m.id)?.soldOut &&
                         " · หมด"}
                     </p>
                     <div className="mt-2 flex items-center justify-between">
@@ -413,6 +438,11 @@ export default function Pos() {
                   <p className="text-stone-600">
                     {l.options.map((o) => o.name).join(", ")} {l.note}
                   </p>
+                  {!menuIsOpen(l.menuItemId, availability) && (
+                    <p className="text-amber-800">
+                      ปิดขายแล้ว · รับชำระรายการเดิมได้
+                    </p>
+                  )}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
@@ -428,12 +458,14 @@ export default function Pos() {
                         )
                       }
                       aria-label={`เพิ่ม ${l.menu.name}`}
+                      disabled={!menuCanBeAdded(l.menuItemId, availability)}
                     >
                       <Plus />
                     </Button>
                     <span className="min-w-8 text-center text-xl">{l.qty}</span>
                     <Button
                       variant="ghost"
+                      disabled={!menuCanBeAdded(l.menuItemId, availability)}
                       onClick={() => {
                         setEditing(l);
                         setMenu(l.menu);

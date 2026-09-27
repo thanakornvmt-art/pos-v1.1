@@ -11,6 +11,14 @@ import { authorized, body, fail, sameOrigin } from "@/lib/http";
 import { serializable } from "@/lib/transaction";
 import { explodeBom } from "@/domain/inventory";
 const mutation = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("menuActive"),
+      id: z.string().min(1),
+      isActive: z.boolean(),
+      confirmed: z.literal(true),
+    })
+    .strict(),
   z.object({ kind: z.literal("ingredient"), data: ingredientSchema }),
   z.object({
     kind: z.literal("archiveIngredient"),
@@ -72,6 +80,17 @@ export async function POST(req: Request) {
     await serializable(async (tx) => {
       let before: unknown = {};
       let entityId = "";
+      if (v.kind === "menuActive") {
+        entityId = v.id;
+        before = await tx.menuItem.findUniqueOrThrow({
+          where: { id: v.id },
+          select: { id: true, isActive: true },
+        });
+        await tx.menuItem.update({
+          where: { id: v.id },
+          data: { isActive: v.isActive },
+        });
+      }
       if (v.kind === "ingredient") {
         const old = await tx.ingredient.findUnique({
           where: { id: v.data.id },

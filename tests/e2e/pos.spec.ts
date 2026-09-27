@@ -134,9 +134,11 @@ test("ออฟไลน์หลัง reload เก็บบิล แล้�
     page.getByRole("heading", { name: "รับเงินแล้ว บันทึกบิลเรียบร้อย" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "ขายบิลถัดไป" }).click();
-  await expect(page.getByText("รอส่ง 1 บิล")).toBeVisible();
+  await expect(page.getByRole("status").getByText("รอส่ง 1 บิล")).toBeVisible();
   await context.setOffline(false);
-  await expect(page.getByText("รอส่ง 0 บิล")).toBeVisible({ timeout: 25000 });
+  await expect(page.getByRole("status").getByText("รอส่ง 0 บิล")).toBeVisible({
+    timeout: 25000,
+  });
 });
 test("แคชเชียร์เปิด API รายงานและสต็อกไม่ได้", async ({ page }) => {
   await login(page, "cashier", "2345");

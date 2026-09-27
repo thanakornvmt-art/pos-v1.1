@@ -23,6 +23,7 @@ export const ticketSchema = z.object({
   paidOrderUuid: z.string().nullable(),
   createdAt: z.string(),
   catalogId: z.string(),
+  menuNames: z.record(z.string()),
 });
 export const deliveryView = z.object({
   tickets: z.array(ticketSchema),

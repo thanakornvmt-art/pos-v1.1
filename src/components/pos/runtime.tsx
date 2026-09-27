@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { liveQuery } from "dexie";
 import { useQuery } from "@tanstack/react-query";
 import { bootstrapSchema, type Bootstrap } from "@/domain/schema";
+import { availabilitySchema, type Availability } from "@/domain/availability";
+import { apiGet } from "@/lib/client-api";
 import { localDb, deviceId } from "@/lib/offline/db";
 import { syncPending } from "@/lib/offline/sync";
 import { usePos } from "@/stores/pos";
@@ -28,6 +30,22 @@ function useRuntimeState() {
   const [online, setOnline] = useState(false);
   const [pending, setPending] = useState(0);
   const [syncError, setSyncError] = useState("");
+  const hasDraftLines = usePos((state) => Boolean(state.draft?.lines.length));
+  const [cachedAvailability, setCachedAvailability] = useState<Availability>();
+  const status = useQuery({
+    queryKey: ["availability"],
+    queryFn: async () => {
+      const data = await apiGet("/api/availability", availabilitySchema);
+      await localDb.meta.put({
+        key: "availability",
+        value: JSON.stringify(data),
+      });
+      return data;
+    },
+    refetchInterval: 3000,
+    retry: false,
+  });
+  const availability = status.data ?? cachedAvailability;
   const query = useQuery({
     queryKey: ["bootstrap"],
     queryFn: async () => {
@@ -55,6 +73,15 @@ function useRuntimeState() {
   });
   useEffect(() => {
     let alive = true;
+    void localDb.meta.get("availability").then((saved) => {
+      if (!saved || !alive) return;
+      try {
+        const parsed = availabilitySchema.safeParse(JSON.parse(saved.value));
+        if (parsed.success) setCachedAvailability(parsed.data);
+      } catch {
+        // Ignore an invalid cache; the next online response repairs it.
+      }
+    });
     void localDb.bootstrap
       .get("active")
       .then((c) => {
@@ -108,7 +135,17 @@ function useRuntimeState() {
       if (!active?.lines.length || !boot || boot.user.id !== query.data.user.id)
         setBoot(query.data);
     }
-  }, [query.data, boot]);
+  }, [query.data, boot, hasDraftLines]);
+  const activeIds = availability
+    ?.filter((menu) => menu.isActive)
+    .map((menu) => menu.id)
+    .sort()
+    .join(",");
+  const refresh = query.refetch;
+  useEffect(() => {
+    // Refresh reopened menus without replacing a draft's original snapshot.
+    if (activeIds !== undefined) void refresh();
+  }, [activeIds, refresh]);
   useEffect(() => {
     if (boot && "serviceWorker" in navigator)
       void navigator.serviceWorker.ready.then((reg) =>
@@ -118,7 +155,7 @@ function useRuntimeState() {
         }),
       );
   }, [boot]);
-  return { boot, loaded, online, pending, syncError, refresh: query.refetch };
+  return { boot, loaded, online, pending, syncError, availability, refresh };
 }
 export function Connection({
   online,

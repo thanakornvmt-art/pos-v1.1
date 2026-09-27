@@ -10,6 +10,7 @@ import {
   type Channel,
   type CartLine,
   type Menu,
+  type Catalog,
 } from "@/domain/schema";
 import { apiGet, apiPost } from "@/lib/client-api";
 import { formatMoney, priceOrder } from "@/domain/pricing";
@@ -36,6 +37,10 @@ export default function Delivery() {
   });
   const [channel, setChannel] = useState<Channel>("GRAB");
   const [lines, setLines] = useState<CartLine[]>([]);
+  const [draftCatalog, setDraftCatalog] = useState<{
+    id: string;
+    data: Catalog;
+  } | null>(null);
   const [ref, setRef] = useState("");
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -43,6 +48,26 @@ export default function Delivery() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const data = query.data;
+  function addLine(line: CartLine) {
+    if (
+      !data?.catalog.menus.some((item) => item.id === line.menuItemId) ||
+      data.availability.find((item) => item.id === line.menuItemId)?.soldOut
+    ) {
+      setMenu(null);
+      setError("เมนูนี้ปิดขายหรือหมดแล้ว กรุณาเลือกใหม่");
+      return;
+    }
+    // A draft keeps its price/options while the live catalog changes.
+    const snapshot = draftCatalog ?? { id: data.catalogId, data: data.catalog };
+    if (!snapshot.data.menus.some((item) => item.id === line.menuItemId)) {
+      setMenu(null);
+      setError("เมนูนี้เพิ่งเปิดขาย กรุณาบันทึกรายการเดิมก่อนเริ่มออเดอร์ใหม่");
+      return;
+    }
+    setDraftCatalog(snapshot);
+    setLines((previous) => [...previous, line]);
+    setMenu(null);
+  }
   async function mutate(value: unknown) {
     if (busy) return;
     setBusy(true);
@@ -65,7 +90,12 @@ export default function Delivery() {
         <p>{query.error?.message ?? "กำลังโหลด…"}</p>
       </AdminShell>
     );
-  const total = priceOrder(data.catalog, channel, lines);
+  const total = priceOrder(draftCatalog?.data ?? data.catalog, channel, lines);
+  const unavailable = lines.filter(
+    (line) =>
+      !data.catalog.menus.some((item) => item.id === line.menuItemId) ||
+      data.availability.find((item) => item.id === line.menuItemId)?.soldOut,
+  );
   return (
     <AdminShell title="ออเดอร์ทุกช่องทาง">
       <div className="mb-5 flex flex-wrap gap-2">
@@ -100,9 +130,7 @@ export default function Delivery() {
                     <p>รับสุทธิ {formatMoney(t.netPayout)}</p>
                     {t.lines.map((l) => (
                       <p key={l.id}>
-                        {l.qty} ×{" "}
-                        {data.catalog.menus.find((m) => m.id === l.menuItemId)
-                          ?.name ?? l.menuItemId}
+                        {l.qty} × {t.menuNames[l.menuItemId] ?? l.menuItemId}
                       </p>
                     ))}
                     <p className="my-2 font-bold">
@@ -189,7 +217,10 @@ export default function Delivery() {
                 })
               }
             >
-              {m.name} · {m.soldOut ? "หมด / เปิดขาย" : "กดเพื่อปิดขาย"}
+              {m.name} ·{" "}
+              {m.soldOut
+                ? "ของหมด / ยกเลิกสถานะของหมด"
+                : "ตั้งเป็นของหมดชั่วคราว"}
             </Button>
           ))}
         </div>
@@ -225,16 +256,13 @@ export default function Delivery() {
                   if (m.groups.some((g) => g.isRequired || g.minSelect > 0))
                     setMenu(m);
                   else
-                    setLines([
-                      ...lines,
-                      {
-                        id: crypto.randomUUID(),
-                        menuItemId: m.id,
-                        qty: 1,
-                        optionIds: [],
-                        note: "",
-                      },
-                    ]);
+                    addLine({
+                      id: crypto.randomUUID(),
+                      menuItemId: m.id,
+                      qty: 1,
+                      optionIds: [],
+                      note: "",
+                    });
                 }}
               >
                 {m.name}
@@ -245,6 +273,27 @@ export default function Delivery() {
             {lines.length} รายการ · {formatMoney(total.total)} · รับสุทธิ{" "}
             {formatMoney(total.netPayout)}
           </p>
+          {unavailable.length > 0 && (
+            <div role="alert" className="rounded-xl bg-amber-100 p-3">
+              <p>บางรายการปิดขายหรือหมดแล้ว กรุณานำออกก่อนบันทึกออเดอร์ใหม่</p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const ids = new Set(unavailable.map((line) => line.id));
+                  const remaining = lines.filter((line) => !ids.has(line.id));
+                  setLines(remaining);
+                  if (!remaining.length) setDraftCatalog(null);
+                }}
+              >
+                นำรายการที่ขายไม่ได้ออก
+              </Button>
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="text-red-700">
+              {error}
+            </p>
+          )}
           <label>
             เลขอ้างอิงแพลตฟอร์ม
             <input
@@ -254,7 +303,9 @@ export default function Delivery() {
             />
           </label>
           <Button
-            disabled={busy || !lines.length || !ref.trim()}
+            disabled={
+              busy || !lines.length || !ref.trim() || unavailable.length > 0
+            }
             onClick={() =>
               void mutate({
                 kind: "create",
@@ -262,11 +313,12 @@ export default function Delivery() {
                 channel,
                 externalRef: ref,
                 lines,
-                catalogId: data.catalogId,
+                catalogId: draftCatalog?.id ?? data.catalogId,
               }).then((ok) => {
                 if (ok) {
                   setOpen(false);
                   setLines([]);
+                  setDraftCatalog(null);
                   setRef("");
                 }
               })
@@ -277,21 +329,14 @@ export default function Delivery() {
         </div>
       </Dialog>
       {menu && (
-        <Options
-          menu={menu}
-          onClose={() => setMenu(null)}
-          onAdd={(l) => {
-            setLines([...lines, l]);
-            setMenu(null);
-          }}
-        />
+        <Options menu={menu} onClose={() => setMenu(null)} onAdd={addLine} />
       )}
       <Dialog
         open={pending !== null}
         onOpenChange={(o) => {
           if (!o) setPending(null);
         }}
-        title="ยืนยันเปลี่ยนสถานะขายเมนู?"
+        title="ยืนยันเปลี่ยนสถานะของหมดชั่วคราว?"
         description="มีผลกับหน้าจอที่ออนไลน์ทุกช่องทางในระบบนี้"
       >
         <Button disabled={busy} onClick={() => void mutate(pending)}>
