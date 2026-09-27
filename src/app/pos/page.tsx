@@ -371,7 +371,7 @@ export default function Pos() {
                   <img
                     src={m.imageUrl || "/icon.svg"}
                     alt=""
-                    className="h-28 w-full object-cover"
+                    className="aspect-[12/7] w-full bg-stone-100 object-contain"
                   />
                   <div className="p-2 xl:p-4">
                     <p className="text-xl font-bold">
