@@ -90,6 +90,9 @@ importers:
       autoprefixer:
         specifier: ^10.4.21
         version: 10.6.1(postcss@8.5.28)
+      dotenv:
+        specifier: 16.6.1
+        version: 16.6.1
       embedded-postgres:
         specifier: 18.4.0-beta.17
         version: 18.4.0-beta.17
