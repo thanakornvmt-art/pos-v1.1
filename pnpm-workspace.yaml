@@ -9,3 +9,4 @@ allowBuilds:
   esbuild: true
   prisma: true
   "@embedded-postgres/windows-x64": true
+  "@embedded-postgres/linux-x64": true
