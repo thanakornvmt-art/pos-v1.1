@@ -80,3 +80,21 @@ label {
     break-after: page;
   }
 }
+#current-receipt-print {
+  display: none;
+}
+@media print {
+  body.printing-current-receipt > * {
+    display: none !important;
+  }
+  body.printing-current-receipt > #current-receipt-print {
+    display: block !important;
+  }
+  body.printing-current-receipt {
+    margin: 0;
+  }
+  #current-receipt-print .receipt {
+    margin: 0 auto;
+    padding: 2mm;
+  }
+}

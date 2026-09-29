@@ -97,6 +97,9 @@ export async function encodeReceipt(
   }
   if (test) row("*** ทดสอบเครื่องพิมพ์ ***", true);
   row(receipt.shopName, true);
+  if (receipt.copy) row("สำเนา / พิมพ์ซ้ำ", true);
+  if (receipt.voided) row("ยกเลิกแล้ว", true);
+  if (receipt.pendingSync) row("รับเงินแล้ว · รอส่งข้อมูล");
   row(kind === "KITCHEN" ? "ใบครัว" : "ใบเสร็จรับเงิน");
   if (kind === "CUSTOMER" && settings.header) row(settings.header);
   if (settings.showQueue) row(`คิว ${receipt.queueNo}`, true);

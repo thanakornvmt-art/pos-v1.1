@@ -2,9 +2,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const id = z.string().uuid().safeParse(params.id);
+  const id = z.string().uuid().safeParse((await params).id);
   if (!id.success) return new Response(null, { status: 404 });
   const image = await prisma.menuImage.findUnique({ where: { id: id.data } });
   if (!image) return new Response(null, { status: 404 });

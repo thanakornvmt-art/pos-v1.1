@@ -16,6 +16,9 @@ export interface LocalOrder {
   receipt: Receipt;
 }
 export interface Receipt {
+  copy?: boolean;
+  voided?: boolean;
+  pendingSync?: boolean;
   settings?: ReceiptSettings;
   shopName: string;
   queueNo: string;

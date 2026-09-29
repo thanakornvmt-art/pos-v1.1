@@ -5,6 +5,7 @@ import {
   inputMoney,
   suggestedDeliveryPrice,
   allocateMoney,
+  moneyToBaht,
 } from "../../src/domain/pricing";
 import { explodeBom, receiveCost } from "../../src/domain/inventory";
 import { promptpayPayload, crc16 } from "../../src/domain/promptpay";
@@ -14,6 +15,16 @@ describe("เงินและราคา", () => {
   it("แปลงสตางค์โดยไม่เกิด float drift", () => {
     expect(inputMoney("0.29")).toBe(29);
     expect(() => inputMoney("1.001")).toThrow();
+  });
+  it("ส่งออกยอดรายวันเป็นบาทพร้อมทศนิยมสองตำแหน่ง", () => {
+    expect(moneyToBaht(15000)).toBe("150.00");
+    expect(moneyToBaht(10109)).toBe("101.09");
+    expect(
+      csvText([
+        ["วันที่", "บิล", "ยอดขาย", "กำไร"],
+        ["2026-09-27", 2, moneyToBaht(15000), moneyToBaht(10109)],
+      ]),
+    ).toContain('"2026-09-27","2","150.00","101.09"');
   });
   it("คิดตัวเลือก ส่วนลด GP เป็นสตางค์", () => {
     const p = priceOrder(

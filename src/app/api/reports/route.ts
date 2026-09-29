@@ -6,6 +6,8 @@ import { serializable } from "@/lib/transaction";
 import { dateRangeSchema, dateBounds } from "@/domain/reports";
 import { moneySchema } from "@/domain/schema";
 import { roundMoney } from "@/domain/pricing";
+import { paymentReport } from "@/domain/payment-report";
+import { reportBreakdown } from "@/domain/report-breakdown";
 function day(date: Date) {
   return new Date(date.getTime() + 7 * 3600000).toISOString().slice(0, 10);
 }
@@ -16,19 +18,68 @@ export async function GET(req: Request) {
       Object.fromEntries(new URL(req.url).searchParams),
     );
     const bounds = dateBounds(range.from, range.to);
-    const [orders, movements, closes] = await Promise.all([
-      prisma.order.findMany({
-        where: { createdAt: bounds, status: "PAID" },
-        include: { lines: true },
+    const [allOrders, movements, closes, received, reversed, voids, allMenus] =
+      await Promise.all([
+        prisma.order.findMany({
+          where: { createdAt: bounds },
+          include: {
+            lines: true,
+            payments: true,
+            user: { select: { name: true } },
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        }),
+        prisma.stockMovement.findMany({
+          where: { createdAt: bounds, type: { in: ["WASTE", "COUNT"] } },
+          include: { ingredient: { select: { name: true } } },
+          orderBy: { createdAt: "asc" },
+        }),
+        prisma.cashClose.findMany({
+          where: { businessDate: { gte: range.from, lte: range.to } },
+          orderBy: { businessDate: "asc" },
+        }),
+        prisma.payment.findMany({
+          where: { order: { createdAt: bounds } },
+          select: { method: true, amount: true },
+        }),
+        prisma.payment.findMany({
+          where: { reversedAt: bounds },
+          select: { method: true, amount: true },
+        }),
+        prisma.order.findMany({
+          where: { status: "VOIDED", voidedAt: bounds },
+          select: {
+            clientUuid: true,
+            orderNo: true,
+            total: true,
+            createdAt: true,
+            voidedAt: true,
+            voidReason: true,
+          },
+          orderBy: { voidedAt: "desc" },
+        }),
+        prisma.menuItem.findMany({ select: { id: true, name: true } }),
+      ]);
+    const orders = allOrders.filter((order) => order.status === "PAID");
+    const [snapshots, discountLogs] = await Promise.all([
+      prisma.catalogSnapshot.findMany({
+        where: {
+          id: { in: [...new Set(orders.map((order) => order.catalogId))] },
+        },
+        select: { id: true, data: true },
       }),
-      prisma.stockMovement.findMany({
-        where: { createdAt: bounds, type: { in: ["WASTE", "COUNT"] } },
-        include: { ingredient: { select: { name: true } } },
+      prisma.auditLog.findMany({
+        where: {
+          action: "DISCOUNT",
+          entity: "Order",
+          entityId: {
+            in: orders
+              .filter((order) => order.discount > 0)
+              .map((order) => order.id),
+          },
+        },
+        select: { entityId: true, afterJson: true },
         orderBy: { createdAt: "asc" },
-      }),
-      prisma.cashClose.findMany({
-        where: { businessDate: { gte: range.from, lte: range.to } },
-        orderBy: { businessDate: "asc" },
       }),
     ]);
     const summary = {
@@ -127,9 +178,6 @@ export async function GET(req: Request) {
         menus.set(m.id, m);
       }
     }
-    const allMenus = await prisma.menuItem.findMany({
-      select: { id: true, name: true },
-    });
     for (const m of allMenus)
       if (!menus.has(m.id))
         menus.set(m.id, {
@@ -167,6 +215,14 @@ export async function GET(req: Request) {
           reason: m.reason,
         }));
     return Response.json({
+      ...reportBreakdown(allOrders, snapshots, discountLogs),
+      payments: paymentReport(received, reversed),
+      voids: voids.map((order) => ({
+        ...order,
+        reason: order.voidReason ?? "",
+        voidedAt: order.voidedAt!.toISOString(),
+        createdAt: order.createdAt.toISOString(),
+      })),
       summary,
       daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)),
       hourly,

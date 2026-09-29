@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { PrinterControls } from "@/components/print/provider";
 import { menuIsOpen, menuCanBeAdded } from "@/domain/availability";
 import { liveQuery } from "dexie";
 import { Plus, Trash2, Soup, Search, ArrowRight } from "lucide-react";
@@ -293,6 +295,17 @@ export default function Pos() {
         <section
           className={`${mobilePanel === "menu" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto p-2 md:flex md:overflow-hidden md:p-3 xl:p-5`}
         >
+          <div className="no-print flex shrink-0 flex-wrap items-start gap-2 px-2 pt-2">
+            <Link
+              href="/orders"
+              className="rounded-xl border-2 border-primary bg-white px-4 py-3 font-bold"
+            >
+              ดูบิลเก่า / พิมพ์ซ้ำ
+            </Link>
+            <div className="min-w-0 flex-1">
+              <PrinterControls />
+            </div>
+          </div>
           <div className="mb-2 flex shrink-0 items-center gap-3 md:mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-5 text-stone-500" />
@@ -563,6 +576,7 @@ export default function Pos() {
           onClose={() => setPayment(false)}
           onSuccess={(queue) => {
             setPayment(false);
+            setMobilePanel("menu");
             const next = {
               ...draft,
               lines: [],
@@ -603,7 +617,7 @@ export default function Pos() {
           if (!open) setSuccess("");
         }}
         title="รับเงินแล้ว บันทึกบิลเรียบร้อย"
-        description="บันทึกในเครื่องแล้ว ระบบจะส่งบิล ตัดสต็อก และเตรียมงานพิมพ์เมื่อเชื่อมต่อ"
+        description="บันทึกยอดรับเงินแล้ว ระบบส่งใบเสร็จตามการตั้งค่าพิมพ์อัตโนมัติ และส่งบิลเข้าระบบเมื่อเชื่อมต่อ"
       >
         <p className="text-center">เลขคิว</p>
         <p className="my-4 text-center text-5xl font-bold text-primary">

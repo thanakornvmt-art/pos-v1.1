@@ -41,7 +41,19 @@ export async function syncPending() {
             await localDb.orders.update(local.id, {
               state: "synced",
               error: "",
+              receipt: {
+                ...local.receipt,
+                pendingSync: false,
+                voided: result.status === "VOIDED",
+              },
             });
+            await localDb.printJobs
+              .where("orderId")
+              .equals(local.id)
+              .modify((job) => {
+                job.receipt.pendingSync = false;
+                job.receipt.voided = result.status === "VOIDED";
+              });
             await localDb.printJobs
               .where("orderId")
               .equals(local.id)

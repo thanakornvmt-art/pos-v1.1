@@ -5,7 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import Decimal from "decimal.js";
 import { stockViewSchema } from "@/domain/stock";
 import { apiGet, apiPost } from "@/lib/client-api";
-import { formatMoney, inputMoney, roundMoney } from "@/domain/pricing";
+import {
+  formatMoney,
+  inputMoney,
+  moneyToBaht,
+  roundMoney,
+} from "@/domain/pricing";
 import { AdminShell } from "@/components/admin-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -437,7 +442,7 @@ export default function Stock() {
                   "วัตถุดิบ",
                   "ประเภท",
                   "จำนวน",
-                  "มูลค่า(สตางค์)",
+                  "มูลค่า",
                   "เหตุผล",
                   "อ้างอิง",
                 ],
@@ -447,7 +452,9 @@ export default function Stock() {
                     m.ingredientId,
                   m.type,
                   m.qtyDelta,
-                  roundMoney(new Decimal(m.qtyDelta).mul(m.costAtTime)),
+                  moneyToBaht(
+                    roundMoney(new Decimal(m.qtyDelta).mul(m.costAtTime)),
+                  ),
                   m.reason,
                   m.refId,
                 ]),

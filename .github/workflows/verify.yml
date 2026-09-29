@@ -1,0 +1,61 @@
+name: Verify POS
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: pos
+          POSTGRES_PASSWORD: pos_ci_only
+          POSTGRES_DB: morning_pos_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pos -d morning_pos_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://pos:pos_ci_only@127.0.0.1:5432/morning_pos_test?schema=public
+      DIRECT_URL: postgresql://pos:pos_ci_only@127.0.0.1:5432/morning_pos_test?schema=public
+      NEXTAUTH_URL: http://127.0.0.1:3001
+      NEXTAUTH_SECRET: local-ci-test-secret-at-least-32-characters
+      TEST_BASE_URL: http://127.0.0.1:3001
+      SEED_DEMO: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level=high
+      - run: pnpm db:generate
+      - run: pnpm db:migrate
+      - run: pnpm deploy:seed
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Browser and transaction checks
+        run: |
+          pnpm start -p 3001 --hostname 127.0.0.1 > /tmp/pos-test.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3001/api/health; then break; fi
+            sleep 1
+          done
+          pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failure
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

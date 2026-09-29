@@ -9,6 +9,7 @@ artifacts
 output
 tmp
 file
+รูป
 test-results
 playwright-report
 *.tsbuildinfo

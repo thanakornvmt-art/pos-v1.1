@@ -59,6 +59,7 @@ export async function checkout(
         deliveryId: current.deliveryId,
       });
       const receipt: Receipt = {
+        pendingSync: true,
         settings: boot.catalog.settings.receiptConfig,
         shopName: boot.catalog.settings.shopName,
         queueNo,
@@ -95,7 +96,10 @@ export async function checkout(
           id: `${clientUuid}:${kind}`,
           orderId: clientUuid,
           kind: kind as "KITCHEN" | "CUSTOMER",
-          state: "waiting-sync" as const,
+          state:
+            kind === "CUSTOMER"
+              ? ("ready" as const)
+              : ("waiting-sync" as const),
           receipt,
         })),
       );

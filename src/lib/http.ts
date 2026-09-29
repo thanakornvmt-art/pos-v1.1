@@ -2,6 +2,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./auth";
 import { prisma } from "./db";
 import { ZodError } from "zod";
+import { readJson } from "./read-json";
+import { assertSameOrigin } from "./request-origin";
 export async function authorized(ownerOnly = false) {
   const session = await getServerSession(authOptions);
   const user = session?.user.id
@@ -17,16 +19,20 @@ export async function authorized(ownerOnly = false) {
   return user;
 }
 export function sameOrigin(req: Request) {
-  if (req.headers.get("origin") !== new URL(req.url).origin)
-    throw new Error("ต้นทางคำขอไม่ถูกต้อง");
+  assertSameOrigin(req, process.env.NEXTAUTH_URL ?? req.url);
 }
 export async function body(req: Request): Promise<unknown> {
-  const text = await req.text();
-  if (text.length > 200000) throw new Error("ข้อมูลใหญ่เกินกำหนด");
-  return JSON.parse(text) as unknown;
+  return readJson(req);
 }
 export function fail(error: unknown, status = 400) {
-  console.error(error instanceof Error ? error.message : "request failed");
+  console.error(
+    "request failed",
+    error instanceof ZodError
+      ? "validation"
+      : error instanceof Error
+        ? error.name
+        : "unknown",
+  );
   if (error instanceof ZodError)
     return Response.json(
       { error: "ข้อมูลไม่ครบหรือรูปแบบไม่ถูกต้อง กรุณาตรวจช่องที่กรอก" },

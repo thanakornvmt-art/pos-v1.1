@@ -1,8 +1,19 @@
 import { z } from "zod";
+import { reportSalesSchema } from "./report-sales";
+export const businessDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const date = new Date(value + "T00:00:00Z");
+    return (
+      Number.isFinite(date.getTime()) &&
+      date.toISOString().slice(0, 10) === value
+    );
+  }, "วันที่ไม่มีอยู่จริง");
 export const dateRangeSchema = z
   .object({
-    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    from: businessDateSchema,
+    to: businessDateSchema,
   })
   .refine((v) => {
     const from = new Date(v.from + "T00:00:00+07:00");
@@ -22,6 +33,25 @@ export function dateBounds(from: string, to: string) {
   };
 }
 export const reportSchema = z.object({
+  ...reportSalesSchema.shape,
+  payments: z.array(
+    z.object({
+      method: z.string(),
+      received: z.number(),
+      reversed: z.number(),
+      net: z.number(),
+    }),
+  ),
+  voids: z.array(
+    z.object({
+      clientUuid: z.string(),
+      orderNo: z.string(),
+      total: z.number(),
+      createdAt: z.string(),
+      voidedAt: z.string(),
+      reason: z.string(),
+    }),
+  ),
   summary: z.object({
     bills: z.number(),
     sales: z.number(),

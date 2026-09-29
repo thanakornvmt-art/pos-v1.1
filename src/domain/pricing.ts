@@ -20,6 +20,9 @@ export function allocateMoney(amount: number, weights: number[]): number[] {
   for (let i = 0; remainder > 0; i++, remainder--) shares[i % shares.length]++;
   return shares;
 }
+export function moneyToBaht(satang: number): string {
+  return new Decimal(satang).div(100).toFixed(2);
+}
 export function formatMoney(satang: number): string {
   return new Intl.NumberFormat("th-TH", {
     style: "currency",

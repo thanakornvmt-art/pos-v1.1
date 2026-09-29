@@ -23,6 +23,13 @@ export function ReceiptView({
       style={{ width: `${settings.paperWidth}mm` }}
     >
       <h2 className="text-center text-xl font-bold">{receipt.shopName}</h2>
+      {receipt.copy && (
+        <p className="text-center font-bold">สำเนา / พิมพ์ซ้ำ</p>
+      )}
+      {receipt.voided && <p className="text-center font-bold">ยกเลิกแล้ว</p>}
+      {receipt.pendingSync && (
+        <p className="text-center">รับเงินแล้ว · รอส่งข้อมูล</p>
+      )}
       <p className="text-center">
         {kind === "KITCHEN" ? "ใบครัว" : "ใบเสร็จรับเงิน"}
       </p>

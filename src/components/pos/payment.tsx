@@ -15,6 +15,7 @@ import { checkout } from "@/lib/offline/checkout";
 import { syncPending } from "@/lib/offline/sync";
 import { promptpayPayload } from "@/domain/promptpay";
 import QRCode from "qrcode";
+import { usePrinter } from "@/components/print/provider";
 export function Payment({
   boot,
   draft,
@@ -26,6 +27,7 @@ export function Payment({
   onClose: () => void;
   onSuccess: (queue: string) => void;
 }) {
+  const printer = usePrinter();
   const [method, setMethod] = useState<OrderInput["payment"]["method"]>("CASH");
   const [cash, setCash] = useState("");
   const [discount, setDiscount] = useState<Discount | null>(null);
@@ -101,6 +103,7 @@ export function Payment({
         uuid,
       );
       void syncPending();
+      printer.afterPayment(`${saved.id}:CUSTOMER`);
       onSuccess(saved.order.queueNo);
     } catch (e) {
       setError(e instanceof Error ? e.message : "บันทึกบิลไม่สำเร็จ");

@@ -16,8 +16,11 @@ import { BluetoothPrinter, supportsBluetooth } from "@/lib/printing/bluetooth";
 import { encodeReceipt } from "@/lib/printing/raster";
 import { confirmPrinted, sendPrintJob } from "@/lib/printing/queue";
 import { syncPending } from "@/lib/offline/sync";
+import { usePrinter } from "@/components/print/provider";
 
 export default function Print() {
+  const shared = usePrinter();
+  const { printer, name } = shared;
   const runtime = useRuntime();
   const [jobs, setJobs] = useState<PrintJob[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -25,7 +28,6 @@ export default function Print() {
   const [config, setConfig] = useState(() => printerSettingsSchema.parse({}));
   const [supported, setSupported] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [name, setName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [progress, setProgress] = useState(0);
@@ -33,9 +35,7 @@ export default function Print() {
   const [confirmation, setConfirmation] = useState<"printed" | "repeat" | null>(
     null,
   );
-  const printer = useRef<BluetoothPrinter | null>(null);
   useEffect(() => {
-    printer.current = new BluetoothPrinter(setName);
     setSupported(supportsBluetooth());
     const subscription = liveQuery(() =>
       localDb.printJobs.filter((job) => job.state !== "printed").toArray(),
@@ -52,7 +52,6 @@ export default function Print() {
       .finally(() => setLoaded(true));
     return () => {
       subscription.unsubscribe();
-      printer.current?.disconnect();
     };
   }, []);
   const sample: Receipt = {
@@ -186,6 +185,7 @@ export default function Print() {
                 onPrinterSaved={(settings) => {
                   printer.current?.disconnect();
                   setConfig(settings);
+                  shared.config.current = settings;
                 }}
                 sample={sample}
               />
@@ -206,8 +206,8 @@ export default function Print() {
           </p>
         </section>
         <p>
-          งานพิมพ์เก็บในอุปกรณ์นี้ บิลออฟไลน์รอส่งและตัดสต็อกก่อนจึงพร้อมพิมพ์
-          งานที่ส่งพิมพ์ค้างจะไม่พิมพ์ซ้ำเอง
+          งานพิมพ์เก็บในอุปกรณ์นี้ ใบเสร็จลูกค้าพิมพ์ได้หลังรับเงิน
+          ใบครัวรอส่งบิลเข้าระบบ งานที่ส่งพิมพ์ค้างจะไม่พิมพ์ซ้ำเอง
         </p>
         {!jobs.length && (
           <p className="rounded-xl bg-white p-5">ไม่มีงานพิมพ์ค้าง</p>

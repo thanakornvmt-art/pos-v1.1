@@ -14,7 +14,7 @@ import {
 } from "@/domain/admin";
 import { explodeBom } from "@/domain/inventory";
 import { channels, channelNames } from "@/domain/schema";
-import { formatMoney, roundMoney } from "@/domain/pricing";
+import { formatMoney, moneyToBaht, roundMoney } from "@/domain/pricing";
 import { apiGet, apiPost } from "@/lib/client-api";
 import { downloadCsv } from "@/lib/csv";
 import { AdminShell } from "@/components/admin-shell";
@@ -382,7 +382,7 @@ export default function Manage() {
                 [
                   "เมนู",
                   "ช่องทาง",
-                  "ราคา(สตางค์)",
+                  "ราคา",
                   "ต้นทุนอาหาร",
                   "บรรจุภัณฑ์",
                   "กำไร",
@@ -391,10 +391,10 @@ export default function Manage() {
                 ...marginRows.map((r) => [
                   r.name,
                   channelNames[r.channel],
-                  r.price,
-                  r.food,
-                  r.packaging,
-                  r.profit,
+                  moneyToBaht(r.price),
+                  moneyToBaht(r.food),
+                  moneyToBaht(r.packaging),
+                  moneyToBaht(r.profit),
                   r.foodCostBps === null
                     ? ""
                     : new Decimal(r.foodCostBps).div(100).toString(),

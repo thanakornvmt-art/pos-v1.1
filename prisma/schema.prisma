@@ -354,6 +354,7 @@ model AuditLog {
   afterJson Json @map("after_json")
   createdAt DateTime @default(now()) @map("created_at")
   @@index([entity, entityId])
+  @@index([createdAt, id])
   @@map("audit_logs")
 }
 model StockBatch {

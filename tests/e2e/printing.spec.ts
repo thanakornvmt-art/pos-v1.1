@@ -96,6 +96,99 @@ async function seedJob(page: Page) {
   await page.reload();
 }
 
+test("รับเงินแล้วพิมพ์อัตโนมัติแม้ส่งบิลไม่ได้ และเปลี่ยนหน้าไม่พิมพ์ซ้ำ", async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  await mockApis(page);
+  await page.route("**/api/sync/orders", (route) => route.abort());
+  await page.addInitScript(() => {
+    const state = window as Window & { printerBytes?: number };
+    state.printerBytes = 0;
+    class Device extends EventTarget {
+      name = "Auto BLE";
+      gatt = {
+        connected: false,
+        connect: async () => {
+          this.gatt.connected = true;
+          return {
+            getPrimaryService: async () => ({
+              getCharacteristic: async () => ({
+                properties: { write: true, writeWithoutResponse: false },
+                writeValueWithResponse: async (bytes: Uint8Array) => {
+                  state.printerBytes = (state.printerBytes ?? 0) + bytes.length;
+                },
+              }),
+            }),
+          };
+        },
+        disconnect: () => {
+          this.gatt.connected = false;
+          this.dispatchEvent(new Event("gattserverdisconnected"));
+        },
+      };
+    }
+    Object.defineProperty(navigator, "bluetooth", {
+      configurable: true,
+      value: { requestDevice: async () => new Device() },
+    });
+  });
+  await page.goto("/print");
+  await expect(
+    page.getByRole("button", { name: "ตั้งค่าบิล / เครื่องพิมพ์" }),
+  ).toBeVisible();
+  await seedJob(page);
+  await page
+    .getByRole("button", { name: "เชื่อมต่อบลูทูธ", exact: true })
+    .click();
+  await page.getByRole("button", { name: "เปิดเมนูหลัก", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: "หน้าขาย (POS)", exact: true })
+    .click();
+  await expect(
+    page.locator("summary").filter({ hasText: "Auto BLE" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: /โจ๊กหมู ฿45/ })
+    .first()
+    .click();
+  // The fixture has optional egg choices; POS opens its options dialog.
+  const add = page.getByRole("button", { name: "เพิ่มลงบิล", exact: true });
+  if (await add.isVisible()) await add.click();
+  await page.getByRole("button", { name: /ตะกร้า/ }).click();
+  await page.getByTestId("checkout-mobile").click();
+  await page.getByTestId("confirm-payment").click();
+  await expect(
+    page.getByText(
+      "ส่งใบเสร็จแล้ว ตรวจว่ากระดาษออกครบ หากต้องการพิมพ์ซ้ำให้เปิดบิลเก่า",
+      { exact: true },
+    ),
+  ).toBeVisible({ timeout: 45000 });
+  const bytes = await page.evaluate(
+    () => (window as Window & { printerBytes?: number }).printerBytes,
+  );
+  expect(bytes).toBeGreaterThan(1000);
+  await page.getByRole("button", { name: "ขายบิลถัดไป", exact: true }).click();
+  await page
+    .getByRole("link", { name: "ดูบิลเก่า / พิมพ์ซ้ำ", exact: true })
+    .click();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { printerBytes?: number }).printerBytes,
+    ),
+  ).toBe(bytes);
+  await expect(
+    page.getByRole("button", { name: "พิมพ์สำเนาในเครื่อง", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { printerBytes?: number }).printerBytes,
+    ),
+  ).toBe(0);
+});
+
 test("ตั้งค่าบิลและตัวอย่างบนมือถือ พร้อม fallback เมื่อไม่มี Web Bluetooth", async ({
   page,
 }) => {

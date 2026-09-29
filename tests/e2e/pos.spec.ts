@@ -22,9 +22,16 @@ test("แถบบนและซ้ายคงอยู่เมื่อเ�
     ["คิวพิมพ์", "/print"],
     ["หน้าขาย (POS)", "/pos"],
   ]) {
+    const linkName = label === "รายงาน" ? "สรุปยอดขาย" : label;
+    if (label === "รายงาน")
+      await page
+        .getByTestId("app-sidebar")
+        .locator("summary")
+        .filter({ hasText: "รายงาน" })
+        .click();
     await page
       .getByRole("navigation", { name: "เมนูหลัก" })
-      .getByRole("link", { name: label, exact: true })
+      .getByRole("link", { name: linkName, exact: true })
       .click();
     await expect(page).toHaveURL(new RegExp(path + "$"));
     await expect(page.getByTestId("app-header")).toHaveAttribute(
@@ -38,7 +45,7 @@ test("แถบบนและซ้ายคงอยู่เมื่อเ�
     await expect(
       page
         .getByRole("navigation", { name: "เมนูหลัก" })
-        .getByRole("link", { name: label, exact: true }),
+        .getByRole("link", { name: linkName, exact: true }),
     ).toHaveAttribute("aria-current", "page");
   }
   await expect(page.getByText("1 รายการ", { exact: true })).toBeVisible();
@@ -100,7 +107,7 @@ test("เงินสดสามแตะ ปุ่มไม่หลุดจ�
   await expect(page.getByText(/ต่ำกว่า Par/)).toBeVisible();
   await page.goto("/reports");
   await expect(
-    page.getByRole("heading", { name: "รายงานเจ้าของร้าน" }),
+    page.getByRole("heading", { name: "สรุปยอดขาย", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "ยอดขายรายวัน" }),

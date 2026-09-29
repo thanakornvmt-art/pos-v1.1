@@ -21,13 +21,18 @@ import { Dialog } from "./ui/dialog";
 import { RuntimeProvider, useRuntime, Connection } from "./pos/runtime";
 import { Button } from "./ui/button";
 import { usePos } from "@/stores/pos";
+import { StockShortageAlert } from "./stock-shortage-alert";
+import { ReportMenu } from "./reports/report-navigation";
+import { PrinterProvider, usePrinter } from "./print/provider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   if (pathname === "/login") return <>{children}</>;
   return (
     <RuntimeProvider>
-      <WorkspaceShell>{children}</WorkspaceShell>
+      <PrinterProvider>
+        <WorkspaceShell>{children}</WorkspaceShell>
+      </PrinterProvider>
     </RuntimeProvider>
   );
 }
@@ -36,6 +41,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [navigationOpen, setNavigationOpen] = useState(false);
   const runtime = useRuntime();
+  const printer = usePrinter();
   const { data: session } = useSession();
   const role = session?.user.role ?? runtime.boot?.user.role;
   const name = session?.user.name ?? runtime.boot?.user.name;
@@ -48,11 +54,13 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           { href: "/delivery", label: "เดลิเวอรี่", icon: Truck },
           { href: "/kitchen", label: "คิวครัว", icon: ChefHat },
           { href: "/print", label: "คิวพิมพ์", icon: Printer },
+          { href: "/orders", label: "บิลเก่า", icon: BookOpen },
           ...(role === "OWNER"
             ? [
                 { href: "/manage", label: "สูตรและต้นทุน", icon: BookOpen },
                 { href: "/stock", label: "จัดการสต็อก", icon: Package },
                 { href: "/reports", label: "รายงาน", icon: ChartColumn },
+                { href: "/audit", label: "ประวัติการทำรายการ", icon: BookOpen },
                 { href: "/settings", label: "ตั้งค่าร้าน", icon: Settings },
                 { href: "/employees", label: "จัดการพนักงาน", icon: Users },
               ]
@@ -113,13 +121,33 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           />
         </div>
       </header>
+      {printer.message && (
+        <div
+          role="status"
+          className="no-print flex shrink-0 flex-wrap items-center gap-2 bg-amber-100 px-3 py-2 text-sm"
+        >
+          <span>{printer.message}</span>
+          <Link href="/print" className="underline">
+            คิวพิมพ์
+          </Link>
+          <button
+            type="button"
+            aria-label="ปิดข้อความพิมพ์"
+            onClick={() => printer.setMessage("")}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {role === "OWNER" && <StockShortageAlert />}
       <div className="flex min-h-0 flex-1 print:block">
         <nav
           data-testid="app-sidebar"
           aria-label="เมนูหลัก"
-          className="no-print hidden w-20 shrink-0 flex-col gap-2 overflow-y-auto bg-ink p-2 text-white md:flex xl:w-48 xl:p-3"
+          className={`no-print hidden w-20 shrink-0 flex-col gap-2 overflow-y-auto bg-ink p-2 text-white md:flex xl:p-3 ${pathname.startsWith("/reports") ? "xl:w-64" : "xl:w-48"}`}
         >
           {links.map(({ href, label, icon: Icon }) => {
+            if (href === "/reports") return <ReportMenu key={href} />;
             const active =
               pathname === href ||
               (href === "/reports" && pathname.startsWith("/orders/"));
@@ -152,23 +180,31 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         description={name ?? "เลือกหน้าที่ต้องการใช้งาน"}
       >
         <nav aria-label="เมนูหลักมือถือ" className="grid gap-2">
-          {links.map(({ href, label, icon: Icon }) => (
-            <Button
-              key={href}
-              asChild
-              variant={pathname === href ? "default" : "outline"}
-              className="justify-start"
-            >
-              <Link
-                href={href}
-                onClick={() => setNavigationOpen(false)}
-                aria-current={pathname === href ? "page" : undefined}
+          {links.map(({ href, label, icon: Icon }) =>
+            href === "/reports" ? (
+              <ReportMenu
+                key={href}
+                mobile
+                onNavigate={() => setNavigationOpen(false)}
+              />
+            ) : (
+              <Button
+                key={href}
+                asChild
+                variant={pathname === href ? "default" : "outline"}
+                className="justify-start"
               >
-                <Icon />
-                {label}
-              </Link>
-            </Button>
-          ))}
+                <Link
+                  href={href}
+                  onClick={() => setNavigationOpen(false)}
+                  aria-current={pathname === href ? "page" : undefined}
+                >
+                  <Icon />
+                  {label}
+                </Link>
+              </Button>
+            ),
+          )}
         </nav>
       </Dialog>
     </div>

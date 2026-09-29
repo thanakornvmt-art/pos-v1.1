@@ -8,23 +8,11 @@ import {
 } from "../../src/domain/schema";
 import { priceOrder } from "../../src/domain/pricing";
 import type { LocalOrder } from "../../src/lib/offline/db";
+import { assertTestTarget } from "../assert-test-target";
 
 const db = new PrismaClient();
 test.describe.configure({ timeout: 90000 });
-test.beforeAll(() => {
-  const url = new URL(process.env.DATABASE_URL ?? "http://invalid");
-  const app = new URL(process.env.TEST_BASE_URL ?? "http://invalid");
-  if (
-    url.hostname !== "127.0.0.1" ||
-    url.pathname !== "/morning_pos_test" ||
-    app.hostname !== "localhost" ||
-    app.port !== "3001"
-  ) {
-    throw new Error(
-      "Menu regression tests require local morning_pos_test and localhost:3001",
-    );
-  }
-});
+test.beforeAll(assertTestTarget);
 test.afterAll(async () => {
   await db.$disconnect();
 });
