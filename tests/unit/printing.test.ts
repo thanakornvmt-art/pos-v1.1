@@ -1,7 +1,8 @@
 import "fake-indexeddb/auto";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
-import { rasterCommand } from "@/lib/printing/raster";
+import { compactRasterCommands, rasterCommand } from "@/lib/printing/raster";
 import {
+  BluetoothPrinter,
   writeChunks,
   type PrintCharacteristic,
 } from "@/lib/printing/bluetooth";
@@ -57,10 +58,166 @@ beforeEach(async () => {
   });
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 describe("receipt output", () => {
+  async function connectedPrinter(
+    write: PrintCharacteristic["writeValueWithResponse"],
+  ) {
+    const characteristic: PrintCharacteristic = {
+      properties: { write: true, writeWithoutResponse: false },
+      writeValueWithResponse: write,
+      writeValueWithoutResponse: vi.fn(),
+    };
+    const device = Object.assign(new EventTarget(), {
+      name: "G80 test double",
+      gatt: {
+        connected: true,
+        connect: async () => {
+          device.gatt.connected = true;
+          return {
+            getPrimaryService: async () => ({
+              getCharacteristic: async () => characteristic,
+            }),
+          };
+        },
+        disconnect: vi.fn(() => {
+          device.gatt.connected = false;
+        }),
+      },
+    });
+    vi.stubGlobal("window", { isSecureContext: true });
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      bluetooth: { requestDevice: async () => device },
+    });
+    const printer = new BluetoothPrinter(vi.fn());
+    await printer.connect(printerSettingsSchema.parse({}));
+    return { printer, device };
+  }
+  it("times out a stalled write, disconnects, and never sends remaining bytes after a late response", async () => {
+    vi.useFakeTimers();
+    let finishWrite!: () => void;
+    const write = vi
+      .fn<PrintCharacteristic["writeValueWithResponse"]>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishWrite = resolve;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const { printer, device } = await connectedPrinter(write);
+    const failed = expect(printer.print(new Uint8Array(40))).rejects.toThrow(
+      "10 วินาที",
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    await failed;
+    expect(printer.connected).toBe(false);
+    expect(device.gatt.disconnect).toHaveBeenCalledOnce();
+    finishWrite();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(write).toHaveBeenCalledTimes(1);
+    await printer.connect(printerSettingsSchema.parse({}));
+    await printer.print(new Uint8Array(20));
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("manual disconnect immediately releases a stuck send without retrying it", async () => {
+    vi.useFakeTimers();
+    const write = vi
+      .fn<PrintCharacteristic["writeValueWithResponse"]>()
+      .mockImplementation(() => new Promise<void>(() => {}));
+    const { printer } = await connectedPrinter(write);
+    const failed = expect(printer.print(new Uint8Array(40))).rejects.toThrow(
+      "หยุดส่ง",
+    );
+    printer.disconnect();
+    await failed;
+    expect(write).toHaveBeenCalledOnce();
+    expect(printer.connected).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  // Reconstruct the paper from ESC/POS image commands, including blank feed.
+  function decodePaper(bytes: Uint8Array, width: number, height: number) {
+    const paper = new Uint8Array((width / 8) * height);
+    let offset = 0;
+    let row = 0;
+    while (offset < bytes.length) {
+      expect([...bytes.subarray(offset, offset + 4)]).toEqual([29, 118, 48, 0]);
+      const columns = bytes[offset + 4] + bytes[offset + 5] * 256;
+      const rows = bytes[offset + 6] + bytes[offset + 7] * 256;
+      expect(columns).toBeGreaterThan(0);
+      expect(columns).toBeLessThanOrEqual(width / 8);
+      expect(rows).toBeGreaterThan(0);
+      expect(row + rows).toBeLessThanOrEqual(height);
+      offset += 8;
+      expect(offset + columns * rows).toBeLessThanOrEqual(bytes.length);
+      for (let y = 0; y < rows; y++) {
+        paper.set(
+          bytes.subarray(offset, offset + columns),
+          (row + y) * (width / 8),
+        );
+        offset += columns;
+      }
+      row += rows;
+    }
+    expect(row).toBe(height);
+    return paper;
+  }
+  it.each([384, 576])(
+    "reduces padded text data without moving any dots on %i-dot paper",
+    (width) => {
+      const height = 52;
+      const rgba = new Uint8ClampedArray(width * height * 4).fill(255);
+      // Separate marks above/below the text exercise Thai vowel/tone placement.
+      for (const [x, y] of [
+        [8, 8],
+        [17, 13],
+        [80, 20],
+        [127, 36],
+        [15, 42],
+      ]) {
+        rgba.set([0, 0, 0, 255], (y * width + x) * 4);
+      }
+      const original = rasterCommand(rgba, width, height);
+      const compact = compactRasterCommands(rgba, width, height);
+      expect(decodePaper(compact, width, height)).toEqual(
+        decodePaper(original, width, height),
+      );
+      expect(compact.length).toBeLessThan(original.length / 3);
+    },
+  );
+  it.each(["blank", "solid", "edges", "transparent"])(
+    "preserves %s images and never increases data size",
+    (kind) => {
+      const width = 576;
+      const height = 256;
+      const rgba = new Uint8ClampedArray(width * height * 4).fill(255);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (
+            kind === "solid" ||
+            kind === "transparent" ||
+            (kind === "edges" && (x === 0 || x === width - 1))
+          ) {
+            rgba.set(
+              [0, 0, 0, kind === "transparent" ? 0 : 255],
+              (y * width + x) * 4,
+            );
+          }
+        }
+      }
+      const original = rasterCommand(rgba, width, height);
+      const compact = compactRasterCommands(rgba, width, height);
+      expect(decodePaper(compact, width, height)).toEqual(
+        decodePaper(original, width, height),
+      );
+      expect(compact.length).toBeLessThanOrEqual(original.length);
+    },
+  );
   it("packs black pixels MSB-first, leaves transparent pixels white, and validates size", () => {
     const pixels = new Uint8ClampedArray(8 * 4).fill(255);
     pixels.set([0, 0, 0, 255], 0);

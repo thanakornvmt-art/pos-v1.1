@@ -97,6 +97,7 @@ export default function Print() {
   }
   async function transmit(repeat = false) {
     if (!selected || !printer.current) return;
+    setConfirmation(null);
     await perform(async () => {
       if (!printer.current?.connected)
         throw new Error("เชื่อมต่อเครื่องพิมพ์ก่อน");
@@ -148,10 +149,10 @@ export default function Print() {
             </Button>
             <Button
               variant="outline"
-              disabled={!name || busy}
-              onClick={() => printer.current?.disconnect()}
+              disabled={!name && !busy && !shared.busy}
+              onClick={shared.stopPrinting}
             >
-              ตัดการเชื่อมต่อ
+              หยุดส่งและปิดพิมพ์อัตโนมัติ
             </Button>
             <Button
               variant="outline"

@@ -43,6 +43,62 @@ export function rasterCommand(
     }
   return result;
 }
+
+// GS v 0 advances by the image height and returns to the left margin. Encode
+// white top/bottom margins as narrow images, preserving every pixel position.
+export function compactRasterCommands(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+) {
+  const original = rasterCommand(rgba, width, height);
+  const stride = width / 8;
+  let first = height;
+  let last = -1;
+  let inkWidth = 1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < stride; x++) {
+      if (original[8 + y * stride + x]) {
+        first = Math.min(first, y);
+        last = y;
+        inkWidth = Math.max(inkWidth, x + 1);
+      }
+    }
+  }
+  const bands: Uint8Array[] = [];
+  function band(start: number, rows: number, columns: number) {
+    if (!rows) return;
+    const data = new Uint8Array(8 + rows * columns);
+    data.set([0x1d, 0x76, 0x30, 0, columns, 0, rows & 255, rows >> 8]);
+    for (let y = 0; y < rows; y++) {
+      data.set(
+        original.subarray(
+          8 + (start + y) * stride,
+          8 + (start + y) * stride + columns,
+        ),
+        8 + y * columns,
+      );
+    }
+    bands.push(data);
+  }
+  if (last < 0) {
+    band(0, height, 1);
+  } else {
+    band(0, first, 1);
+    band(first, last - first + 1, inkWidth);
+    band(last + 1, height - last - 1, 1);
+  }
+  const length = bands.reduce((sum, data) => sum + data.length, 0);
+  if (length >= original.length) return original;
+  const compact = new Uint8Array(length);
+  let offset = 0;
+  for (const data of bands) {
+    compact.set(data, offset);
+    offset += data.length;
+  }
+  return compact;
+}
+
 export async function encodeReceipt(
   receipt: Receipt,
   kind: PrintJob["kind"],
@@ -74,7 +130,7 @@ export async function encodeReceipt(
       context!.textBaseline = "alphabetic";
       context!.fillText(value, 8, size + 4);
       commands.push(
-        rasterCommand(
+        compactRasterCommands(
           context!.getImageData(0, 0, width, canvas.height).data,
           width,
           canvas.height,

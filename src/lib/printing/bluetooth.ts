@@ -10,9 +10,7 @@ interface PrintDevice extends EventTarget {
   gatt?: {
     connected: boolean;
     connect(): Promise<{
-      getPrimaryService(
-        uuid: string,
-      ): Promise<{
+      getPrimaryService(uuid: string): Promise<{
         getCharacteristic(uuid: string): Promise<PrintCharacteristic>;
       }>;
     }>;
@@ -36,29 +34,69 @@ export function supportsBluetooth() {
   );
 }
 
+async function writeWithTimeout(
+  write: () => Promise<void>,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let aborted: (() => void) | undefined;
+  const interrupted = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            "เครื่องพิมพ์ไม่ตอบรับเกิน 10 วินาที หยุดส่งแล้ว ตรวจใบที่ออกก่อนเชื่อมต่อและพิมพ์ซ้ำ",
+          ),
+        ),
+      10_000,
+    );
+    aborted = () =>
+      reject(
+        signal?.reason ?? new Error("หยุดส่งพิมพ์แล้ว ตรวจใบที่ออกก่อนสั่งซ้ำ"),
+      );
+    signal?.addEventListener("abort", aborted, { once: true });
+  });
+  try {
+    await Promise.race([write(), interrupted]);
+  } finally {
+    clearTimeout(timer);
+    if (aborted) signal?.removeEventListener("abort", aborted);
+  }
+}
+
 export async function writeChunks(
   characteristic: PrintCharacteristic,
   bytes: Uint8Array,
   settings: PrinterSettings,
   connected: () => boolean,
   progress: (percent: number) => void = () => {},
+  signal?: AbortSignal,
 ) {
   const config = printerSettingsSchema.parse(settings);
   for (let offset = 0; offset < bytes.length; offset += config.chunkSize) {
+    signal?.throwIfAborted();
     if (!connected())
       throw new Error("บลูทูธหลุดระหว่างพิมพ์ ตรวจใบที่ออกก่อนสั่งซ้ำ");
     const chunk = new Uint8Array(
       bytes.slice(offset, offset + config.chunkSize),
     );
     if (characteristic.properties.write)
-      await characteristic.writeValueWithResponse(chunk);
+      await writeWithTimeout(
+        () => characteristic.writeValueWithResponse(chunk),
+        signal,
+      );
     else if (characteristic.properties.writeWithoutResponse)
-      await characteristic.writeValueWithoutResponse(chunk);
+      await writeWithTimeout(
+        () => characteristic.writeValueWithoutResponse(chunk),
+        signal,
+      );
     else throw new Error("เครื่องนี้ไม่มีช่องรับข้อมูลพิมพ์ที่รองรับ");
     progress(
       Math.min(100, Math.floor(((offset + chunk.length) * 100) / bytes.length)),
     );
-    await new Promise<void>((resolve) => setTimeout(resolve, config.delayMs));
+    if (offset + chunk.length < bytes.length)
+      await new Promise<void>((resolve) => setTimeout(resolve, config.delayMs));
   }
 }
 
@@ -68,8 +106,12 @@ export class BluetoothPrinter {
   private settings = printerSettingsSchema.parse({});
   private busy = false;
   private connecting = false;
+  private activePrint?: AbortController;
   constructor(private readonly onStatus: (name: string | null) => void) {}
   private disconnected = () => {
+    this.activePrint?.abort(
+      new Error("บลูทูธหลุดระหว่างพิมพ์ ตรวจใบที่ออกก่อนสั่งซ้ำ"),
+    );
     this.characteristic = undefined;
     this.onStatus(null);
   };
@@ -119,6 +161,9 @@ export class BluetoothPrinter {
     }
   }
   disconnect() {
+    this.activePrint?.abort(
+      new Error("หยุดส่งพิมพ์แล้ว ตรวจใบที่ออกก่อนสั่งซ้ำ"),
+    );
     this.device?.removeEventListener(
       "gattserverdisconnected",
       this.disconnected,
@@ -132,6 +177,8 @@ export class BluetoothPrinter {
     if (!this.connected || !this.characteristic)
       throw new Error("เชื่อมต่อเครื่องพิมพ์ก่อน");
     this.busy = true;
+    const controller = new AbortController();
+    this.activePrint = controller;
     try {
       await writeChunks(
         this.characteristic,
@@ -139,8 +186,15 @@ export class BluetoothPrinter {
         this.settings,
         () => this.connected,
         progress,
+        controller.signal,
       );
+    } catch (error) {
+      // A timed-out write may still be pending in the Bluetooth stack. Tear
+      // down the connection before releasing the queue; never retry bytes.
+      this.disconnect();
+      throw error;
     } finally {
+      this.activePrint = undefined;
       this.busy = false;
     }
   }

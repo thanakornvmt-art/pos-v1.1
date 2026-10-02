@@ -116,6 +116,11 @@ function usePrinterState() {
               ? e.message
               : "บันทึกบิลแล้ว แต่พิมพ์ไม่สำเร็จ เปิดคิวพิมพ์เพื่อตรวจสอบ",
           );
+          if (next.mode === "bluetooth") {
+            // Keep remaining durable jobs ready for review after a partial send.
+            pending.current = [];
+            break;
+          }
         }
       }
     } finally {
@@ -152,6 +157,14 @@ function usePrinterState() {
       setMessage(e instanceof Error ? e.message : "เชื่อมต่อไม่สำเร็จ");
     }
   }
+  function stopPrinting() {
+    pending.current = [];
+    setAuto(false);
+    printer.current?.disconnect();
+    setMessage(
+      "หยุดส่งและปิดพิมพ์อัตโนมัติแล้ว ตรวจใบที่ออก งานที่เหลือเปิดได้ในคิวพิมพ์",
+    );
+  }
   const config = useRef(printerSettingsSchema.parse({}));
   useEffect(() => {
     void localDb.meta
@@ -178,6 +191,7 @@ function usePrinterState() {
     afterPayment,
     printCopy,
     connect,
+    stopPrinting,
     config,
   };
 }
@@ -236,6 +250,11 @@ export function PrinterControls() {
             onClick={() => void p.connect()}
           >
             {p.name ? "เลือกเครื่องพิมพ์ใหม่" : "เชื่อมต่อเครื่องพิมพ์"}
+          </Button>
+        )}
+        {p.mode === "bluetooth" && (p.name || p.busy) && (
+          <Button variant="outline" onClick={p.stopPrinting}>
+            หยุดส่งและปิดพิมพ์อัตโนมัติ
           </Button>
         )}
         <p>
