@@ -3,6 +3,9 @@ enableGlobalVirtualStore: false
 # Scoped to this Prisma patch; validate/generate/build exercise compatibility.
 overrides:
   "@prisma/config@6.19.3>deepmerge-ts": 8.0.0
+  # Preserve the dependency audit gate with patched image/source-map packages.
+  source-map-js: 1.2.2
+  sharp: 0.35.5
 allowBuilds:
   "@prisma/client": true
   "@prisma/engines": true
