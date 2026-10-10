@@ -1,5 +1,11 @@
 "use client";
 import { useState } from "react";
+import {
+  ingredientCategories,
+  ingredientCategoryNames,
+  ingredientCategoryLabel,
+  type IngredientCategory,
+} from "@/domain/ingredient-category";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Decimal from "decimal.js";
 import { z } from "zod";
@@ -31,6 +37,8 @@ export default function Manage() {
   });
   const [tab, setTab] = useState("ingredients");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [ingredientCategoryFilter, setIngredientCategoryFilter] =
+    useState("all");
   const [ingredient, setIngredient] = useState<IngredientInput | null>(null);
   const [recipe, setRecipe] = useState<RecipeInput | null>(null);
   const [error, setError] = useState("");
@@ -52,6 +60,7 @@ export default function Manage() {
     try {
       await apiPost("/api/manage", confirmation.payload);
       await query.refetch();
+      await queryClient.invalidateQueries({ queryKey: ["stock"] });
       await queryClient.invalidateQueries({ queryKey: ["availability"] });
       setConfirmation(null);
       setIngredient(null);
@@ -267,6 +276,7 @@ export default function Manage() {
               setIngredient({
                 id: crypto.randomUUID(),
                 name: "",
+                category: "FOOD",
                 purchaseUnit: "",
                 usageUnit: "",
                 conversionRate: "1",
@@ -281,50 +291,76 @@ export default function Manage() {
           >
             + เพิ่มวัตถุดิบ
           </Button>
+          <label className="mt-4 block">
+            หมวดวัตถุดิบ
+            <select
+              name="ingredient-category-filter"
+              value={ingredientCategoryFilter}
+              onChange={(e) => setIngredientCategoryFilter(e.target.value)}
+            >
+              <option value="all">ทุกหมวด</option>
+              {ingredientCategories.map((category) => (
+                <option key={category} value={category}>
+                  {ingredientCategoryNames[category]}
+                </option>
+              ))}
+              <option value="unclassified">ยังไม่ระบุหมวด</option>
+            </select>
+          </label>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {units.map((i) => (
-              <article key={i.id} className="rounded-2xl bg-white p-5">
-                <h2 className="text-xl font-bold">{i.name}</h2>
-                <p>
-                  คงเหลือ {i.currentQty} {i.usageUnit} · yield {i.yieldPercent}%
-                </p>
-                <p>
-                  ต้นทุน {formatMoney(roundMoney(i.avgCost))}/{i.usageUnit}
-                </p>
-                <p>
-                  Par {i.parLevel} · จุดสั่ง {i.reorderPoint}
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const { avgCost, currentQty, active, ...input } = i;
-                      void avgCost;
-                      void currentQty;
-                      void active;
-                      setIngredient(input);
-                    }}
-                  >
-                    แก้ไข
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      setConfirmation({
-                        title: `ปิดใช้งาน ${i.name}?`,
-                        payload: {
-                          kind: "archiveIngredient",
-                          id: i.id,
-                          confirmed: true,
-                        },
-                      })
-                    }
-                  >
-                    ปิดใช้งาน
-                  </Button>
-                </div>
-              </article>
-            ))}
+            {units
+              .filter(
+                (i) =>
+                  ingredientCategoryFilter === "all" ||
+                  (ingredientCategoryFilter === "unclassified"
+                    ? !i.category
+                    : i.category === ingredientCategoryFilter),
+              )
+              .map((i) => (
+                <article key={i.id} className="rounded-2xl bg-white p-5">
+                  <h2 className="text-xl font-bold">{i.name}</h2>
+                  <p>{ingredientCategoryLabel(i.category ?? null)}</p>
+                  <p>
+                    คงเหลือ {i.currentQty} {i.usageUnit} · yield{" "}
+                    {i.yieldPercent}%
+                  </p>
+                  <p>
+                    ต้นทุน {formatMoney(roundMoney(i.avgCost))}/{i.usageUnit}
+                  </p>
+                  <p>
+                    Par {i.parLevel} · จุดสั่ง {i.reorderPoint}
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const { avgCost, currentQty, active, ...input } = i;
+                        void avgCost;
+                        void currentQty;
+                        void active;
+                        setIngredient(input);
+                      }}
+                    >
+                      แก้ไข
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        setConfirmation({
+                          title: `ปิดใช้งาน ${i.name}?`,
+                          payload: {
+                            kind: "archiveIngredient",
+                            id: i.id,
+                            confirmed: true,
+                          },
+                        })
+                      }
+                    >
+                      ปิดใช้งาน
+                    </Button>
+                  </div>
+                </article>
+              ))}
           </div>
         </>
       )}
@@ -523,6 +559,31 @@ export default function Manage() {
       >
         {ingredient && (
           <div className="grid gap-3 md:grid-cols-2">
+            <label>
+              หมวดวัตถุดิบ
+              <select
+                name="ingredient-category"
+                value={ingredient.category ?? ""}
+                onChange={(e) =>
+                  setIngredient({
+                    ...ingredient,
+                    category: (e.target.value ||
+                      null) as IngredientCategory | null,
+                  })
+                }
+              >
+                <option value="">ยังไม่ระบุหมวด</option>
+                {ingredientCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {ingredientCategoryNames[category]}
+                  </option>
+                ))}
+              </select>
+              <span className="block text-sm">
+                รายการเดิมยังไม่ระบุหมวด
+                เลือกหมวดได้โดยไม่เปลี่ยนยอดสต็อกหรือสูตร
+              </span>
+            </label>
             {(
               [
                 "name",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ingredientCategorySchema } from "./ingredient-category";
 import { positiveDecimal } from "./admin";
 import { moneySchema, quantitySchema } from "./schema";
 export const receiveSchema = z.object({
@@ -51,6 +52,7 @@ export const stockViewSchema = z.object({
     z.object({
       id: z.string(),
       name: z.string(),
+      category: ingredientCategorySchema.nullable().default(null),
       usageUnit: z.string(),
       purchaseUnit: z.string(),
       currentQty: z.string(),

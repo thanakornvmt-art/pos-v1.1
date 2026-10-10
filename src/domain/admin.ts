@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ingredientCategorySchema } from "./ingredient-category";
 import Decimal from "decimal.js";
 import {
   channelSchema,
@@ -31,6 +32,7 @@ export const ingredientSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().trim().min(1).max(100),
+    category: ingredientCategorySchema.nullable().optional(),
     purchaseUnit: z.string().min(1).max(30),
     usageUnit: z.string().min(1).max(30),
     conversionRate: positiveDecimal,

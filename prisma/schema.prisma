@@ -147,10 +147,16 @@ model OptionItem {
   qtyDelta Decimal? @db.Decimal(18, 6) @map("qty_delta")
   @@map("option_items")
 }
+enum IngredientCategory {
+  FOOD
+  SEASONING
+  PACKAGING
+}
 model Ingredient {
   id String @id @default(uuid())
   name String
   active Boolean @default(true)
+  category IngredientCategory?
   purchaseUnit String @map("purchase_unit")
   usageUnit String @map("usage_unit")
   conversionRate Decimal @db.Decimal(18, 6) @map("conversion_rate")

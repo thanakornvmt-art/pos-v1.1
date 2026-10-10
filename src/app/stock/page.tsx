@@ -1,5 +1,10 @@
 "use client";
 import { useState } from "react";
+import {
+  ingredientCategories,
+  ingredientCategoryNames,
+  ingredientCategoryLabel,
+} from "@/domain/ingredient-category";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Decimal from "decimal.js";
@@ -38,6 +43,7 @@ export default function Stock() {
     reason: "หมดอายุ",
   });
   const [filter, setFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [pending, setPending] = useState<unknown>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,12 +70,22 @@ export default function Stock() {
       setBusy(false);
     }
   }
-  const low = data.ingredients.filter((i) =>
+  const visibleIngredients = data.ingredients.filter(
+    (i) =>
+      categoryFilter === "all" ||
+      (categoryFilter === "unclassified"
+        ? !i.category
+        : i.category === categoryFilter),
+  );
+  const visibleIds = new Set(visibleIngredients.map((i) => i.id));
+  const low = visibleIngredients.filter((i) =>
     new Decimal(i.currentQty).lt(i.parLevel),
   );
   const expiring = data.batches.filter(
     (b) =>
-      b.expiresAt && new Date(b.expiresAt).getTime() <= Date.now() + 86400000,
+      (categoryFilter === "all" || visibleIds.has(b.ingredientId)) &&
+      b.expiresAt &&
+      new Date(b.expiresAt).getTime() <= Date.now() + 86400000,
   );
   const selectedMovements = data.movements.filter(
     (m) => !filter || m.ingredientId === filter,
@@ -95,38 +111,71 @@ export default function Stock() {
         ))}
       </div>
       {tab === "dashboard" && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <section className="rounded-2xl border-2 border-red-300 bg-red-50 p-5">
-            <h2 className="text-xl font-bold text-red-900">
-              ต่ำกว่า Par · {low.length} รายการ
+        <>
+          <label className="mb-4 block">
+            หมวดวัตถุดิบในสต็อก
+            <select
+              name="stock-category-filter"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">ทุกหมวด</option>
+              {ingredientCategories.map((category) => (
+                <option key={category} value={category}>
+                  {ingredientCategoryNames[category]}
+                </option>
+              ))}
+              <option value="unclassified">ยังไม่ระบุหมวด</option>
+            </select>
+          </label>
+          <section className="mb-4 space-y-3" aria-label="รายการสต็อก">
+            <h2 className="text-xl font-bold">
+              สต็อกคงเหลือ · {visibleIngredients.length} รายการ
             </h2>
-            {low.map((i) => (
-              <p
-                key={i.id}
-                className="border-b border-red-200 py-3 text-red-900"
-              >
-                {i.name} · {i.currentQty} / {i.parLevel} {i.usageUnit}
-                {new Decimal(i.currentQty).lte(i.reorderPoint) &&
-                  " · ถึงจุดสั่งซื้อ"}
-              </p>
+            {visibleIngredients.map((i) => (
+              <article key={i.id} className="rounded-xl bg-white p-4">
+                <h3 className="font-bold">{i.name}</h3>
+                <p>
+                  {ingredientCategoryLabel(i.category)} · คงเหลือ {i.currentQty}{" "}
+                  {i.usageUnit}
+                </p>
+              </article>
             ))}
+            {!visibleIngredients.length && <p>ไม่มีวัตถุดิบในหมวดนี้</p>}
           </section>
-          <section className="rounded-2xl border-2 border-orange-300 bg-orange-50 p-5">
-            <h2 className="text-xl font-bold text-orange-900">
-              หมดอายุแล้ว / ภายใน 1 วัน · {expiring.length} ล็อต
-            </h2>
-            {expiring.map((b) => (
-              <p key={b.id} className="border-b border-orange-200 py-3">
-                {data.ingredients.find((i) => i.id === b.ingredientId)?.name} ·{" "}
-                {b.remainingQty} · {b.expiresAt && thaiDate(b.expiresAt)}
+          <div className="grid gap-4 md:grid-cols-2">
+            <section className="rounded-2xl border-2 border-red-300 bg-red-50 p-5">
+              <h2 className="text-xl font-bold text-red-900">
+                ต่ำกว่า Par · {low.length} รายการ
+              </h2>
+              {low.map((i) => (
+                <p
+                  key={i.id}
+                  className="border-b border-red-200 py-3 text-red-900"
+                >
+                  {i.name} · {i.currentQty} / {i.parLevel} {i.usageUnit}
+                  {new Decimal(i.currentQty).lte(i.reorderPoint) &&
+                    " · ถึงจุดสั่งซื้อ"}
+                </p>
+              ))}
+            </section>
+            <section className="rounded-2xl border-2 border-orange-300 bg-orange-50 p-5">
+              <h2 className="text-xl font-bold text-orange-900">
+                หมดอายุแล้ว / ภายใน 1 วัน · {expiring.length} ล็อต
+              </h2>
+              {expiring.map((b) => (
+                <p key={b.id} className="border-b border-orange-200 py-3">
+                  {data.ingredients.find((i) => i.id === b.ingredientId)?.name}{" "}
+                  · {b.remainingQty} · {b.expiresAt && thaiDate(b.expiresAt)}
+                </p>
+              ))}
+              <p className="mt-3">
+                ติดตามวันหมดอายุจากล็อตรับเข้า
+                ยอดตั้งต้นหรือผลต่างนับเพิ่มที่ไม่ทราบล็อตจะไม่มีวันหมดอายุ
               </p>
-            ))}
-            <p className="mt-3">
-              ติดตามวันหมดอายุจากล็อตรับเข้า
-              ยอดตั้งต้นหรือผลต่างนับเพิ่มที่ไม่ทราบล็อตจะไม่มีวันหมดอายุ
-            </p>
-          </section>
-        </div>
+            </section>
+          </div>
+        </>
       )}
       {tab === "receive" && (
         <section className="space-y-4 rounded-xl bg-white p-5">
