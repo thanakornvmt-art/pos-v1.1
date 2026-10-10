@@ -13,7 +13,7 @@ import {
   receiptSettingsSchema,
 } from "@/domain/printing";
 import { BluetoothPrinter, supportsBluetooth } from "@/lib/printing/bluetooth";
-import { encodeReceipt } from "@/lib/printing/raster";
+import { encodeConnectionTest, encodeReceipt } from "@/lib/printing/raster";
 import { confirmPrinted, sendPrintJob } from "@/lib/printing/queue";
 import { syncPending } from "@/lib/offline/sync";
 import { usePrinter } from "@/components/print/provider";
@@ -32,6 +32,7 @@ export default function Print() {
   const busyRef = useRef(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
+  const [diagnostics, setDiagnostics] = useState("");
   const [confirmation, setConfirmation] = useState<"printed" | "repeat" | null>(
     null,
   );
@@ -85,6 +86,7 @@ export default function Print() {
     busyRef.current = true;
     setBusy(true);
     setMessage("");
+    setDiagnostics("");
     setProgress(0);
     try {
       await action();
@@ -95,6 +97,39 @@ export default function Print() {
       setBusy(false);
     }
   }
+  function recordTransfer(
+    result: Awaited<ReturnType<BluetoothPrinter["print"]>>,
+  ) {
+    setDiagnostics(
+      `ส่ง ${(result.bytes / 1024).toFixed(1)} KB ใน ${(result.elapsedMs / 1000).toFixed(1)} วินาที · ${result.chunkSize} ไบต์/ครั้ง · พัก ${result.delayMs} ms · ${result.writeMode} · ${result.rasterMode}`,
+    );
+  }
+  async function testPrinter(connectionOnly: boolean) {
+    await perform(async () => {
+      if (!navigator.locks) throw new Error("กรุณาใช้ Chrome รุ่นปัจจุบัน");
+      await navigator.locks.request(
+        "pos-receipt-printer",
+        { ifAvailable: true },
+        async (lock) => {
+          if (!lock) throw new Error("อีกหน้าต่างกำลังพิมพ์อยู่");
+          const bytes = connectionOnly
+            ? encodeConnectionTest()
+            : await encodeReceipt(
+                sample,
+                "CUSTOMER",
+                true,
+                printer.current!.rasterMode,
+              );
+          recordTransfer(await printer.current!.print(bytes, setProgress));
+          setMessage(
+            connectionOnly
+              ? "ส่งข้อความทดสอบแล้ว ตรวจว่ากระดาษมี START และ END ครบ ก่อนทดสอบภาพภาษาไทย"
+              : "ส่งใบทดสอบแล้ว กรุณาตรวจภาษาไทยและข้อความ จบใบทดสอบ / END ที่ท้ายใบ",
+          );
+        },
+      );
+    });
+  }
   async function transmit(repeat = false) {
     if (!selected || !printer.current) return;
     setConfirmation(null);
@@ -104,8 +139,13 @@ export default function Print() {
       await sendPrintJob(
         selected.id,
         async (job) => {
-          const bytes = await encodeReceipt(job.receipt, job.kind);
-          await printer.current!.print(bytes, setProgress);
+          const bytes = await encodeReceipt(
+            job.receipt,
+            job.kind,
+            false,
+            printer.current!.rasterMode,
+          );
+          recordTransfer(await printer.current!.print(bytes, setProgress));
         },
         repeat,
       );
@@ -156,27 +196,15 @@ export default function Print() {
             </Button>
             <Button
               variant="outline"
-              disabled={!name || busy}
-              onClick={() =>
-                void perform(async () => {
-                  if (!navigator.locks)
-                    throw new Error("กรุณาใช้ Chrome รุ่นปัจจุบัน");
-                  await navigator.locks.request(
-                    "pos-receipt-printer",
-                    { ifAvailable: true },
-                    async (lock) => {
-                      if (!lock) throw new Error("อีกหน้าต่างกำลังพิมพ์อยู่");
-                      await printer.current!.print(
-                        await encodeReceipt(sample, "CUSTOMER", true),
-                        setProgress,
-                      );
-                      setMessage(
-                        "ส่งใบทดสอบแล้ว กรุณาตรวจภาษาไทยและความกว้างกระดาษ",
-                      );
-                    },
-                  );
-                })
-              }
+              disabled={!name || busy || shared.busy}
+              onClick={() => void testPrinter(true)}
+            >
+              ทดสอบการเชื่อมต่อ (ข้อความสั้น)
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!name || busy || shared.busy}
+              onClick={() => void testPrinter(false)}
             >
               ทดสอบพิมพ์
             </Button>
@@ -205,6 +233,7 @@ export default function Print() {
           <p role="status" className="break-words font-semibold">
             {message}
           </p>
+          {diagnostics && <p className="break-words text-sm">{diagnostics}</p>}
         </section>
         <p>
           งานพิมพ์เก็บในอุปกรณ์นี้ ใบเสร็จลูกค้าพิมพ์ได้หลังรับเงิน

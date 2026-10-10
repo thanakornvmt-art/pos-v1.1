@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { useRuntime } from "@/components/pos/runtime";
 import { Options } from "@/components/pos/options";
 import { Payment } from "@/components/pos/payment";
+import { CreateMenu } from "@/components/pos/create-menu";
 import {
   channelNames,
   channels,
@@ -39,6 +40,11 @@ export default function Pos() {
   const [payment, setPayment] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [createMenu, setCreateMenu] = useState(false);
+  const [createdMenu, setCreatedMenu] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [confirm, setConfirm] = useState<{
     title: string;
     action: () => Promise<void>;
@@ -296,6 +302,17 @@ export default function Pos() {
           className={`${mobilePanel === "menu" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto p-2 md:flex md:overflow-hidden md:p-3 xl:p-5`}
         >
           <div className="no-print flex shrink-0 flex-wrap items-start gap-2 px-2 pt-2">
+            {runtime.boot?.user.role === "OWNER" && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreatedMenu(null);
+                  setCreateMenu(true);
+                }}
+              >
+                <Plus size={20} /> เพิ่มเมนูใหม่
+              </Button>
+            )}
             <Link
               href="/orders"
               className="rounded-xl border-2 border-primary bg-white px-4 py-3 font-bold"
@@ -306,6 +323,19 @@ export default function Pos() {
               <PrinterControls />
             </div>
           </div>
+          {createdMenu && (
+            <p
+              role="status"
+              className="my-2 rounded-xl bg-emerald-50 p-3 text-emerald-900"
+            >
+              เพิ่มเมนู “{createdMenu.name}” แล้ว
+              {draft.lines.length
+                ? " · พักบิลนี้และเปิดบิลใหม่เพื่อเลือกเมนูใหม่"
+                : catalog.menus.some((m) => m.id === createdMenu.id)
+                  ? " · พร้อมเลือกขายได้เลย"
+                  : " · กำลังอัปเดตรายการเมนู หากยังไม่ปรากฏให้เชื่อมต่อและเปิดหน้าขายอีกครั้ง"}
+            </p>
+          )}
           <div className="mb-2 flex shrink-0 items-center gap-3 md:mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-5 text-stone-500" />
@@ -567,6 +597,18 @@ export default function Pos() {
             setEditing(undefined);
           }}
           onAdd={(line) => void perform(() => add(line))}
+        />
+      )}
+      {createMenu && (
+        <CreateMenu
+          online={runtime.online}
+          onClose={() => setCreateMenu(false)}
+          onCreated={(menu) => {
+            setCreateMenu(false);
+            setCreatedMenu(menu);
+            setCategory("all");
+            setSearch("");
+          }}
         />
       )}
       {payment && (

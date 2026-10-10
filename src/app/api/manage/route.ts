@@ -4,6 +4,8 @@ import {
   recipeSchema,
   recipeLineSchema,
   settingsSchema,
+  categoryInputSchema,
+  menuInputSchema,
 } from "@/domain/admin";
 import { channelSchema, moneySchema } from "@/domain/schema";
 import { adminData } from "@/lib/admin-data";
@@ -11,6 +13,8 @@ import { authorized, body, fail, sameOrigin } from "@/lib/http";
 import { serializable } from "@/lib/transaction";
 import { explodeBom } from "@/domain/inventory";
 const mutation = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("category"), data: categoryInputSchema }).strict(),
+  z.object({ kind: z.literal("menu"), data: menuInputSchema }).strict(),
   z
     .object({
       kind: z.literal("menuActive"),
@@ -29,6 +33,7 @@ const mutation = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("bom"),
     id: z.string(),
+    categoryId: z.string().min(1).optional(),
     lines: z.array(recipeLineSchema).min(1),
     confirmed: z.literal(true),
   }),
@@ -80,6 +85,47 @@ export async function POST(req: Request) {
     await serializable(async (tx) => {
       let before: unknown = {};
       let entityId = "";
+      if (v.kind === "category") {
+        entityId = v.data.id;
+        const old = await tx.category.findUnique({ where: { id: entityId } });
+        before = old ?? {};
+        const duplicate = await tx.category.findFirst({
+          where: {
+            id: { not: entityId },
+            name: { equals: v.data.name, mode: "insensitive" },
+          },
+        });
+        if (duplicate) throw new Error("มีชื่อหมวดหมู่นี้แล้ว");
+        const last = await tx.category.aggregate({ _max: { sortOrder: true } });
+        await tx.category.upsert({
+          where: { id: entityId },
+          update: { name: v.data.name },
+          create: {
+            ...v.data,
+            sortOrder: (last._max.sortOrder ?? -1) + 1,
+            color: "#78716c",
+          },
+        });
+      }
+      if (v.kind === "menu") {
+        entityId = v.data.id;
+        if (await tx.menuItem.findUnique({ where: { sku: v.data.sku } }))
+          throw new Error("รหัสเมนูนี้ถูกใช้แล้ว");
+        if (
+          !(await tx.category.findUnique({ where: { id: v.data.categoryId } }))
+        )
+          throw new Error("ไม่พบหมวดหมู่ที่เลือก");
+        const { prices, ...menu } = v.data;
+        await tx.menuItem.create({
+          data: {
+            ...menu,
+            imageUrl: "/menu/porridge.svg",
+            prepSeconds: 0,
+            isActive: false,
+            prices: { create: prices },
+          },
+        });
+      }
       if (v.kind === "menuActive") {
         entityId = v.id;
         before = await tx.menuItem.findUniqueOrThrow({
@@ -169,7 +215,18 @@ export async function POST(req: Request) {
       }
       if (v.kind === "bom") {
         entityId = v.id;
-        before = await tx.bomLine.findMany({ where: { menuItemId: v.id } });
+        before = await tx.menuItem.findUniqueOrThrow({
+          where: { id: v.id },
+          include: { bom: true },
+        });
+        if (v.categoryId) {
+          if (!(await tx.category.findUnique({ where: { id: v.categoryId } })))
+            throw new Error("ไม่พบหมวดหมู่ที่เลือก");
+          await tx.menuItem.update({
+            where: { id: v.id },
+            data: { categoryId: v.categoryId },
+          });
+        }
         const recipes = await tx.subRecipe.findMany({
           include: { lines: true },
         });

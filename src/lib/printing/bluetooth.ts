@@ -74,6 +74,11 @@ export async function writeChunks(
   signal?: AbortSignal,
 ) {
   const config = printerSettingsSchema.parse(settings);
+  // Await acknowledged writes instead of adding a fixed sleep. Unacknowledged
+  // BLE writes still need pacing to avoid flooding the printer receive buffer.
+  const delayMs = characteristic.properties.write
+    ? config.delayMs
+    : Math.max(5, config.delayMs);
   for (let offset = 0; offset < bytes.length; offset += config.chunkSize) {
     signal?.throwIfAborted();
     if (!connected())
@@ -95,8 +100,8 @@ export async function writeChunks(
     progress(
       Math.min(100, Math.floor(((offset + chunk.length) * 100) / bytes.length)),
     );
-    if (offset + chunk.length < bytes.length)
-      await new Promise<void>((resolve) => setTimeout(resolve, config.delayMs));
+    if (delayMs > 0 && offset + chunk.length < bytes.length)
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
   }
 }
 
@@ -117,6 +122,9 @@ export class BluetoothPrinter {
   };
   get connected() {
     return Boolean(this.device?.gatt?.connected && this.characteristic);
+  }
+  get rasterMode() {
+    return this.settings.rasterMode;
   }
   async connect(settings: PrinterSettings) {
     if (this.busy || this.connecting)
@@ -179,20 +187,41 @@ export class BluetoothPrinter {
     this.busy = true;
     const controller = new AbortController();
     this.activePrint = controller;
+    const started = performance.now();
+    let sentPercent = 0;
     try {
       await writeChunks(
         this.characteristic,
         bytes,
         this.settings,
         () => this.connected,
-        progress,
+        (percent) => {
+          sentPercent = percent;
+          progress?.(percent);
+        },
         controller.signal,
       );
+      return {
+        bytes: bytes.length,
+        elapsedMs: Math.round(performance.now() - started),
+        chunkSize: this.settings.chunkSize,
+        delayMs: this.characteristic.properties.write
+          ? this.settings.delayMs
+          : Math.max(5, this.settings.delayMs),
+        rasterMode: this.settings.rasterMode,
+        writeMode: this.characteristic.properties.write
+          ? "with-response"
+          : "without-response",
+      };
     } catch (error) {
       // A timed-out write may still be pending in the Bluetooth stack. Tear
       // down the connection before releasing the queue; never retry bytes.
       this.disconnect();
-      throw error;
+      const reason =
+        error instanceof Error ? error.message : "ส่งพิมพ์ไม่สำเร็จ";
+      throw new Error(
+        `${reason} (ส่งได้ ${sentPercent}% ของ ${bytes.length} ไบต์ ใน ${((performance.now() - started) / 1000).toFixed(1)} วินาที)`,
+      );
     } finally {
       this.activePrint = undefined;
       this.busy = false;

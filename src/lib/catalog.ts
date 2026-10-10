@@ -57,10 +57,11 @@ export async function snapshotCatalog() {
     })),
   });
   const id = createHash("sha256").update(JSON.stringify(data)).digest("hex");
-  await prisma.catalogSnapshot.upsert({
-    where: { id },
-    update: {},
-    create: { id, data },
+  // Refreshes from menu availability and the POS can arrive together.
+  // Snapshots are immutable, so atomically ignore an already stored hash.
+  await prisma.catalogSnapshot.createMany({
+    data: [{ id, data }],
+    skipDuplicates: true,
   });
   return { id, data };
 }

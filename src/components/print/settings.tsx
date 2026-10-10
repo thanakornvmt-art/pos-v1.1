@@ -185,11 +185,56 @@ export function PrintSettings({
               kind="CUSTOMER"
               settings={config}
             />
+            <p>
+              VOZY: บิลบลูทูธป้อนกระดาษ 10 บรรทัดแล้วตัดแบบ Partial Cut ตั้ง
+              Print Density เป็น Normal ในโปรแกรม Setup Tools ของเครื่อง และคง
+              Bluetooth baud 921600 เว็บไม่ได้เปลี่ยนสองค่านี้
+            </p>
             <details className="rounded-xl border p-3">
               <summary className="flex min-h-16 cursor-pointer items-center font-bold">
                 การเชื่อมต่อขั้นสูง (ตามคู่มือเครื่อง)
               </summary>
               <div className="space-y-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDevice({ ...device, chunkSize: 20, delayMs: 0 });
+                    setMessage(
+                      "เลือกค่าลดเวลารอแล้ว กดบันทึกและเชื่อมต่อใหม่ จากนั้นทดสอบใบบนเครื่องจริง",
+                    );
+                  }}
+                >
+                  ใช้ค่าลดเวลารอสำหรับ VOZY
+                </Button>
+                <p>
+                  0 ms ลดเวลารอเมื่อเครื่องตอบรับข้อมูลแต่ละครั้ง
+                  ถ้าเครื่องรับแบบไม่ตอบกลับ ระบบยังพักอย่างน้อย 5 ms หากบิลขาด
+                  ให้เพิ่มเวลาพักและทดสอบใหม่
+                </p>
+                <label>
+                  วิธีส่งภาพบิล
+                  <select
+                    value={device.rasterMode}
+                    onChange={(e) =>
+                      setDevice({
+                        ...device,
+                        rasterMode: e.target
+                          .value as PrinterSettings["rasterMode"],
+                      })
+                    }
+                  >
+                    <option value="compatible">
+                      ภาพเต็มความกว้าง (ทดสอบความเข้ากันได้)
+                    </option>
+                    <option value="compact">
+                      ลดข้อมูลพื้นที่ว่าง (ต้องทดสอบกับเครื่องก่อน)
+                    </option>
+                  </select>
+                </label>
+                <p>
+                  หากบิลขาด ให้เริ่มทดสอบด้วยภาพเต็มความกว้าง
+                  วิธีนี้ส่งข้อมูลมากกว่า จึงอาจใช้เวลานานขึ้น
+                </p>
                 <p>
                   ค่าเริ่มต้นสำหรับ BLE ESC/POS แบบ 18F0 / 2AF1
                   ถ้าเครื่องใช้โปรไฟล์อื่น ให้ผู้ขายระบุ UUID
@@ -233,7 +278,7 @@ export function PrintSettings({
                   พักระหว่างส่ง (มิลลิวินาที)
                   <input
                     type="number"
-                    min={5}
+                    min={0}
                     max={100}
                     value={device.delayMs}
                     onChange={(e) =>

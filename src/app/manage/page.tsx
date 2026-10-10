@@ -21,6 +21,7 @@ import { AdminShell } from "@/components/admin-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { MenuImages } from "@/components/menu-images";
+import { MenuCatalogEditor } from "@/components/menu-catalog-editor";
 export default function Manage() {
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -28,6 +29,7 @@ export default function Manage() {
     queryFn: () => apiGet("/api/manage", adminSchema),
   });
   const [tab, setTab] = useState("ingredients");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [ingredient, setIngredient] = useState<IngredientInput | null>(null);
   const [recipe, setRecipe] = useState<RecipeInput | null>(null);
   const [bom, setBom] = useState<AdminData["menus"][number] | null>(null);
@@ -362,13 +364,51 @@ export default function Manage() {
         </>
       )}
       {tab === "bom" && (
-        <div className="grid gap-3 md:grid-cols-3">
-          {data.menus.map((m) => (
-            <Button key={m.id} variant="outline" onClick={() => setBom(m)}>
-              {m.name}
-            </Button>
-          ))}
-        </div>
+        <section>
+          <MenuCatalogEditor
+            data={data}
+            selectedCategory={categoryFilter}
+            reload={async () => {
+              await query.refetch();
+              await queryClient.invalidateQueries({
+                queryKey: ["availability"],
+              });
+            }}
+          />
+          <label className="mb-4 block">
+            หมวดหมู่สูตรรายเมนู
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">ทุกหมวดหมู่</option>
+              {data.categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-3 md:grid-cols-3">
+            {data.menus
+              .filter(
+                (m) =>
+                  categoryFilter === "all" || m.categoryId === categoryFilter,
+              )
+              .map((m) => (
+                <Button key={m.id} variant="outline" onClick={() => setBom(m)}>
+                  {m.name}
+                </Button>
+              ))}
+          </div>
+          {!data.menus.some(
+            (m) => categoryFilter === "all" || m.categoryId === categoryFilter,
+          ) && (
+            <p className="mt-4" role="status">
+              ยังไม่มีเมนูในหมวดหมู่นี้
+            </p>
+          )}
+        </section>
       )}
       {tab === "profit" && (
         <>
@@ -663,6 +703,19 @@ export default function Manage() {
       >
         {bom && (
           <div className="space-y-4">
+            <label>
+              หมวดหมู่เมนู
+              <select
+                value={bom.categoryId}
+                onChange={(e) => setBom({ ...bom, categoryId: e.target.value })}
+              >
+                {data.categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             {lineEditor(bom.bom, (lines) => setBom({ ...bom, bom: lines }))}
             <BomPreview data={data} menu={bom} />
             <Button
@@ -672,6 +725,7 @@ export default function Manage() {
                   payload: {
                     kind: "bom",
                     id: bom.id,
+                    categoryId: bom.categoryId,
                     lines: bom.bom,
                     confirmed: true,
                   },

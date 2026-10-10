@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { adminSchema } from "@/domain/admin";
 export async function adminData() {
-  const [ingredients, recipes, menus, suppliers, settings, fees] =
+  const [ingredients, recipes, menus, suppliers, settings, fees, categories] =
     await Promise.all([
       prisma.ingredient.findMany({ orderBy: { name: "asc" } }),
       prisma.subRecipe.findMany({ include: { lines: true } }),
@@ -12,8 +12,12 @@ export async function adminData() {
       prisma.supplier.findMany(),
       prisma.settings.findUniqueOrThrow({ where: { id: "store" } }),
       prisma.channelSetting.findMany(),
+      prisma.category.findMany({
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
     ]);
   return adminSchema.parse({
+    categories,
     ingredients: ingredients.map((i) => ({
       ...i,
       conversionRate: i.conversionRate.toString(),

@@ -99,7 +99,12 @@ function usePrinterState() {
           await sendPrintJob(next.id, async (job) => {
             if (next.mode === "bluetooth")
               await printer.current!.print(
-                await encodeReceipt(job.receipt, job.kind),
+                await encodeReceipt(
+                  job.receipt,
+                  job.kind,
+                  false,
+                  printer.current!.rasterMode,
+                ),
               );
             else
               await new Promise<void>((resolve, reject) => {

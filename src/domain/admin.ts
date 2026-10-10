@@ -58,7 +58,36 @@ export const settingsSchema = z.object({
   safetyDays: z.number().int().min(0).max(90).nullable(),
   leadTimeDays: z.number().int().min(0).max(90).nullable(),
 });
+export const categoryInputSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().trim().min(1, "กรุณากรอกชื่อหมวดหมู่").max(100),
+  })
+  .strict();
+export const menuInputSchema = z
+  .object({
+    id: z.string().min(1),
+    sku: z.string().trim().min(1, "กรุณากรอกรหัสเมนู").max(50),
+    name: z.string().trim().min(1, "กรุณากรอกชื่อเมนู").max(100),
+    categoryId: z.string().min(1, "กรุณาเลือกหมวดหมู่"),
+    prices: z
+      .array(z.object({ channel: channelSchema, price: moneySchema }))
+      .length(6),
+  })
+  .strict()
+  .refine(
+    (v) => new Set(v.prices.map((p) => p.channel)).size === 6,
+    "ช่องทางราคาซ้ำ",
+  );
 export const adminSchema = z.object({
+  categories: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      sortOrder: z.number().int(),
+      color: z.string(),
+    }),
+  ),
   ingredients: z.array(
     ingredientSchema.extend({
       avgCost: quantitySchema,
@@ -71,6 +100,7 @@ export const adminSchema = z.object({
     z.object({
       id: z.string(),
       name: z.string(),
+      categoryId: z.string(),
       isActive: z.boolean(),
       soldOut: z.boolean(),
       imageUrl: z.string(),

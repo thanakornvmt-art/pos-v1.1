@@ -28,7 +28,8 @@ export const printerSettingsSchema = z
     service: uuid.default("000018f0-0000-1000-8000-00805f9b34fb"),
     characteristic: uuid.default("00002af1-0000-1000-8000-00805f9b34fb"),
     chunkSize: z.number().int().min(20).max(180).default(20),
-    delayMs: z.number().int().min(5).max(100).default(10),
+    delayMs: z.number().int().min(0).max(100).default(0),
+    rasterMode: z.enum(["compatible", "compact"]).default("compatible"),
   })
   .strict();
 export type PrinterSettings = z.infer<typeof printerSettingsSchema>;

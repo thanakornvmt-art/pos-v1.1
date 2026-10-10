@@ -82,7 +82,7 @@ async function seedJob(page: Page) {
             service: "000018f0-0000-1000-8000-00805f9b34fb",
             characteristic: "00002af1-0000-1000-8000-00805f9b34fb",
             chunkSize: 180,
-            delayMs: 5,
+            delayMs: 0,
           }),
         });
         tx.oncomplete = () => {
@@ -103,8 +103,12 @@ test("รับเงินแล้วพิมพ์อัตโนมัต�
   await mockApis(page);
   await page.route("**/api/sync/orders", (route) => route.abort());
   await page.addInitScript(() => {
-    const state = window as Window & { printerBytes?: number };
+    const state = window as Window & {
+      printerBytes?: number;
+      printerData?: number[];
+    };
     state.printerBytes = 0;
+    state.printerData = [];
     class Device extends EventTarget {
       name = "Auto BLE";
       gatt = {
@@ -117,6 +121,7 @@ test("รับเงินแล้วพิมพ์อัตโนมัต�
                 properties: { write: true, writeWithoutResponse: false },
                 writeValueWithResponse: async (bytes: Uint8Array) => {
                   state.printerBytes = (state.printerBytes ?? 0) + bytes.length;
+                  state.printerData!.push(...bytes);
                 },
               }),
             }),
@@ -169,6 +174,21 @@ test("รับเงินแล้วพิมพ์อัตโนมัต�
     () => (window as Window & { printerBytes?: number }).printerBytes,
   );
   expect(bytes).toBeGreaterThan(1000);
+  const data = await page.evaluate(
+    () => (window as Window & { printerData?: number[] }).printerData!,
+  );
+  expect(data.slice(0, 2)).toEqual([0x1b, 0x40]);
+  // Walk image lengths, so command-looking bytes inside pixels cannot count
+  // as a cut. One complete receipt must end with precisely feed + partial cut.
+  let offset = 2;
+  while (data[offset] === 0x1d && data[offset + 1] === 0x76) {
+    const columns = data[offset + 4] + data[offset + 5] * 256;
+    const rows = data[offset + 6] + data[offset + 7] * 256;
+    expect(columns).toBeGreaterThan(0);
+    expect(columns).toBeLessThanOrEqual(72);
+    offset += 8 + columns * rows;
+  }
+  expect(data.slice(offset)).toEqual([0x1b, 0x64, 10, 0x1d, 0x56, 1]);
   await page.getByRole("button", { name: "ขายบิลถัดไป", exact: true }).click();
   await page
     .getByRole("link", { name: "ดูบิลเก่า / พิมพ์ซ้ำ", exact: true })

@@ -1,6 +1,11 @@
 import "fake-indexeddb/auto";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
-import { compactRasterCommands, rasterCommand } from "@/lib/printing/raster";
+import {
+  compactRasterCommands,
+  encodeConnectionTest,
+  encodeReceipt,
+  rasterCommand,
+} from "@/lib/printing/raster";
 import {
   BluetoothPrinter,
   writeChunks,
@@ -63,6 +68,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("receipt output", () => {
+  it.each([
+    ["CUSTOMER", false, "compatible"],
+    ["KITCHEN", false, "compatible"],
+    ["CUSTOMER", true, "compatible"],
+    ["CUSTOMER", false, "compact"],
+    ["KITCHEN", true, "compact"],
+  ] as const)(
+    "%s receipt (test=%s, raster=%s) prints Normal raster then feeds ten lines and partially cuts once",
+    async (kind, test, rasterMode) => {
+      const canvas = { width: 0, height: 0, getContext: () => context };
+      const context = {
+        fillRect: vi.fn(),
+        fillText: vi.fn(),
+        measureText: (value: string) => ({ width: value.length * 12 }),
+        getImageData: () => ({
+          data: new Uint8ClampedArray(canvas.width * canvas.height * 4).fill(
+            255,
+          ),
+        }),
+      };
+      vi.stubGlobal("document", {
+        fonts: { load: vi.fn().mockResolvedValue([]), check: () => true },
+        createElement: () => canvas,
+      });
+      const bytes = await encodeReceipt(job.receipt, kind, test, rasterMode);
+      expect([...bytes.subarray(0, 2)]).toEqual([0x1b, 0x40]);
+      let offset = 2;
+      let images = 0;
+      while (bytes[offset] === 0x1d && bytes[offset + 1] === 0x76) {
+        expect([...bytes.subarray(offset, offset + 4)]).toEqual([
+          0x1d, 0x76, 0x30, 0,
+        ]);
+        const columns = bytes[offset + 4] + bytes[offset + 5] * 256;
+        const rows = bytes[offset + 6] + bytes[offset + 7] * 256;
+        expect(columns).toBeGreaterThan(0);
+        expect(rows).toBeGreaterThan(0);
+        offset += 8 + columns * rows;
+        images++;
+      }
+      expect(images).toBeGreaterThan(0);
+      expect([...bytes.subarray(offset)]).toEqual([
+        0x1b, 0x64, 10, 0x1d, 0x56, 0x01,
+      ]);
+    },
+  );
   async function connectedPrinter(
     write: PrintCharacteristic["writeValueWithResponse"],
   ) {
@@ -139,6 +189,46 @@ describe("receipt output", () => {
     expect(write).toHaveBeenCalledOnce();
     expect(printer.connected).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
+  });
+  it("reports partial transfer progress on failure without claiming the receipt printed", async () => {
+    vi.useFakeTimers();
+    const write = vi
+      .fn<PrintCharacteristic["writeValueWithResponse"]>()
+      .mockResolvedValueOnce(undefined)
+      .mockImplementation(() => new Promise<void>(() => {}));
+    const { printer } = await connectedPrinter(write);
+    const failed = expect(printer.print(new Uint8Array(40))).rejects.toThrow(
+      "ส่งได้ 50% ของ 40 ไบต์",
+    );
+    await vi.advanceTimersByTimeAsync(10_010);
+    await failed;
+    expect(printer.connected).toBe(false);
+    expect(write).toHaveBeenCalledTimes(2);
+  });
+  it("sends a small ASCII transport probe with a visible end marker and reports its settings", async () => {
+    vi.useFakeTimers();
+    const received: number[] = [];
+    const { printer } = await connectedPrinter(async (bytes) => {
+      received.push(...bytes);
+    });
+    const probe = encodeConnectionTest();
+    const sending = printer.print(probe);
+    await vi.runAllTimersAsync();
+    const result = await sending;
+    expect(received.length).toBeLessThan(100);
+    expect(received.every((byte) => byte < 128)).toBe(true);
+    expect(new TextDecoder().decode(Uint8Array.from(received))).toContain(
+      "START\n1234567890\nEND\n",
+    );
+    expect(received.slice(-6)).toEqual([0x1b, 0x64, 10, 0x1d, 0x56, 1]);
+    expect(result).toMatchObject({
+      bytes: received.length,
+      chunkSize: 20,
+      delayMs: 0,
+      writeMode: "with-response",
+      rasterMode: "compatible",
+    });
+    expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
   });
   // Reconstruct the paper from ESC/POS image commands, including blank feed.
   function decodePaper(bytes: Uint8Array, width: number, height: number) {
@@ -229,6 +319,12 @@ describe("receipt output", () => {
     expect(() => rasterCommand(pixels, 7, 1)).toThrow();
   });
   it("validates receipt and Bluetooth inputs", () => {
+    expect(
+      printerSettingsSchema.parse({ chunkSize: 20, delayMs: 5 }).rasterMode,
+    ).toBe("compatible");
+    expect(
+      printerSettingsSchema.parse({ rasterMode: "compact" }).rasterMode,
+    ).toBe("compact");
     expect(receiptSettingsSchema.parse({}).paperWidth).toBe("80");
     expect(receiptSettingsSchema.safeParse({ paperWidth: "90" }).success).toBe(
       false,
@@ -269,6 +365,34 @@ describe("receipt output", () => {
     ]);
     expect(withoutResponse).not.toHaveBeenCalled();
   });
+  it.each([true, false])(
+    "paces only unacknowledged default writes (ack=%s)",
+    async (ack) => {
+      vi.useFakeTimers();
+      const received: number[] = [];
+      const write = vi.fn(async (bytes: Uint8Array) => {
+        received.push(...bytes);
+      });
+      const characteristic: PrintCharacteristic = {
+        properties: { write: ack, writeWithoutResponse: true },
+        writeValueWithResponse: write,
+        writeValueWithoutResponse: write,
+      };
+      const started = Date.now();
+      const bytes = Uint8Array.from({ length: 45 }, (_, i) => i);
+      const sending = writeChunks(
+        characteristic,
+        bytes,
+        printerSettingsSchema.parse({}),
+        () => true,
+      );
+      await vi.runAllTimersAsync();
+      await sending;
+      expect(received).toEqual([...bytes]);
+      expect(write).toHaveBeenCalledTimes(3);
+      expect(Date.now() - started).toBe(ack ? 0 : 10);
+    },
+  );
   it("stops on disconnect instead of silently resuming a partial receipt", async () => {
     let connected = true;
     const write = vi.fn(async () => {

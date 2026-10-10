@@ -1,8 +1,17 @@
-import { receiptSettingsSchema } from "@/domain/printing";
+import { receiptSettingsSchema, type PrinterSettings } from "@/domain/printing";
 import { channelNames, channelSchema } from "@/domain/schema";
 import { formatMoney } from "@/domain/pricing";
 import type { Receipt, PrintJob } from "@/lib/offline/db";
 import { thaiDate } from "@/lib/utils";
+
+// GS v 0 m=0 uses Normal (1x1) raster scaling, not thermal print darkness.
+const NORMAL_RASTER_MODE = 0;
+
+// Epson ESC d 10 followed by GS V 1. Do not send vendor density or baud
+// commands: VOZY thermal density must be set to Normal in its Setup Tool.
+function receiptEnd() {
+  return Uint8Array.of(0x1b, 0x64, 10, 0x1d, 0x56, 0x01);
+}
 
 // ESC/POS GS v 0 raster: one bit per pixel, high bit is the leftmost pixel.
 export function rasterCommand(
@@ -27,7 +36,7 @@ export function rasterCommand(
     0x1d,
     0x76,
     0x30,
-    0,
+    NORMAL_RASTER_MODE,
     rowBytes & 255,
     rowBytes >> 8,
     height & 255,
@@ -69,7 +78,16 @@ export function compactRasterCommands(
   function band(start: number, rows: number, columns: number) {
     if (!rows) return;
     const data = new Uint8Array(8 + rows * columns);
-    data.set([0x1d, 0x76, 0x30, 0, columns, 0, rows & 255, rows >> 8]);
+    data.set([
+      0x1d,
+      0x76,
+      0x30,
+      NORMAL_RASTER_MODE,
+      columns,
+      0,
+      rows & 255,
+      rows >> 8,
+    ]);
     for (let y = 0; y < rows; y++) {
       data.set(
         original.subarray(
@@ -103,6 +121,7 @@ export async function encodeReceipt(
   receipt: Receipt,
   kind: PrintJob["kind"],
   test = false,
+  rasterMode: PrinterSettings["rasterMode"] = "compatible",
 ) {
   const settings = receiptSettingsSchema.parse(receipt.settings ?? {});
   await document.fonts.load('24px "Noto Sans Thai"');
@@ -130,7 +149,7 @@ export async function encodeReceipt(
       context!.textBaseline = "alphabetic";
       context!.fillText(value, 8, size + 4);
       commands.push(
-        compactRasterCommands(
+        (rasterMode === "compact" ? compactRasterCommands : rasterCommand)(
           context!.getImageData(0, 0, width, canvas.height).data,
           width,
           canvas.height,
@@ -181,7 +200,9 @@ export async function encodeReceipt(
     );
     if (settings.footer) row(settings.footer);
   }
-  commands.push(Uint8Array.of(0x1b, 0x64, 3));
+  if (test) row("*** จบใบทดสอบ / END ***");
+  // Feed ten lines before the Epson GS V 1 partial cut.
+  commands.push(receiptEnd());
   const bytes = new Uint8Array(
     commands.reduce((total, command) => total + command.length, 0),
   );
@@ -190,5 +211,16 @@ export async function encodeReceipt(
     bytes.set(command, offset);
     offset += command.length;
   }
+  return bytes;
+}
+
+// A short ASCII-only probe isolates Bluetooth transport from Thai raster data.
+export function encodeConnectionTest() {
+  const text = new TextEncoder().encode(
+    "\x1b@POS CONNECTION TEST\nSTART\n1234567890\nEND\n",
+  );
+  const bytes = new Uint8Array(text.length + receiptEnd().length);
+  bytes.set(text);
+  bytes.set(receiptEnd(), text.length);
   return bytes;
 }
