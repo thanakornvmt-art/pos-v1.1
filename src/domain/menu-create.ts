@@ -1,14 +1,7 @@
 import { z } from "zod";
-import { adminSchema } from "./admin";
+import { adminSchema, recipeLineSchema, packagingLineSchema } from "./admin";
 import { channels, channelSchema, moneySchema } from "./schema";
 
-const amount = z
-  .string()
-  .regex(/^\d+(\.\d{1,6})?$/, "ใส่จำนวนไม่เกิน 6 ตำแหน่งทศนิยม")
-  .refine(
-    (v) => Number(v) > 0 && Number(v) < 1e12,
-    "จำนวนต้องมากกว่า 0 และน้อยกว่า 1 ล้านล้าน",
-  );
 export const menuCreateSchema = z
   .object({
     id: z.string().uuid(),
@@ -26,33 +19,10 @@ export const menuCreateSchema = z
         "กรุณากำหนดราคาให้ครบทุกช่องทาง",
       ),
     lines: z
-      .array(
-        z
-          .object({
-            ingredientId: z.string().min(1).nullable(),
-            subRecipeId: z.string().min(1).nullable(),
-            qty: amount,
-          })
-          .strict()
-          .refine((v) => Boolean(v.ingredientId) !== Boolean(v.subRecipeId), {
-            message: "เลือกวัตถุดิบหรือสูตรย่อยอย่างใดอย่างหนึ่ง",
-            path: ["ingredientId"],
-          }),
-      )
+      .array(recipeLineSchema)
       .min(1, "กรุณาเพิ่มวัตถุดิบหรือสูตรย่อยอย่างน้อย 1 รายการ")
       .max(100),
-    packaging: z
-      .array(
-        z
-          .object({
-            channel: channelSchema,
-            ingredientId: z.string().min(1, "กรุณาเลือกบรรจุภัณฑ์"),
-            qty: amount,
-          })
-          .strict(),
-      )
-      .max(100)
-      .default([]),
+    packaging: z.array(packagingLineSchema).max(100).default([]),
     confirmed: z.literal(true),
   })
   .strict()

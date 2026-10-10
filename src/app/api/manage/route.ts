@@ -6,12 +6,14 @@ import {
   settingsSchema,
   categoryInputSchema,
   menuInputSchema,
+  packagingLineSchema,
 } from "@/domain/admin";
 import { channelSchema, moneySchema } from "@/domain/schema";
 import { adminData } from "@/lib/admin-data";
 import { authorized, body, fail, sameOrigin } from "@/lib/http";
 import { serializable } from "@/lib/transaction";
 import { explodeBom } from "@/domain/inventory";
+import { recipeVersion } from "@/lib/recipe-version";
 const mutation = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("category"), data: categoryInputSchema }).strict(),
   z.object({ kind: z.literal("menu"), data: menuInputSchema }).strict(),
@@ -34,9 +36,19 @@ const mutation = z.discriminatedUnion("kind", [
     kind: z.literal("bom"),
     id: z.string(),
     categoryId: z.string().min(1).optional(),
-    lines: z.array(recipeLineSchema).min(1),
+    lines: z.array(recipeLineSchema).min(1).max(100),
+    expectedVersion: z.string().optional(),
+    packaging: z.array(packagingLineSchema).max(100).optional(),
     confirmed: z.literal(true),
   }),
+  z
+    .object({
+      kind: z.literal("deleteBom"),
+      id: z.string().min(1),
+      expectedVersion: z.string().min(1),
+      confirmed: z.literal(true),
+    })
+    .strict(),
   z.object({
     kind: z.literal("settings"),
     data: settingsSchema,
@@ -132,6 +144,11 @@ export async function POST(req: Request) {
           where: { id: v.id },
           select: { id: true, isActive: true },
         });
+        if (
+          v.isActive &&
+          !(await tx.bomLine.count({ where: { menuItemId: v.id } }))
+        )
+          throw new Error("กรุณาบันทึกสูตรก่อนเปิดขายเมนู");
         await tx.menuItem.update({
           where: { id: v.id },
           data: { isActive: v.isActive },
@@ -217,8 +234,16 @@ export async function POST(req: Request) {
         entityId = v.id;
         before = await tx.menuItem.findUniqueOrThrow({
           where: { id: v.id },
-          include: { bom: true },
+          include: { bom: true, packaging: true },
         });
+        if (
+          v.expectedVersion &&
+          recipeVersion(before as Parameters<typeof recipeVersion>[0]) !==
+            v.expectedVersion
+        )
+          throw new Error(
+            "สูตรถูกเปลี่ยนจากเครื่องอื่น กรุณาปิดหน้าต่างแล้วโหลดข้อมูลใหม่",
+          );
         if (v.categoryId) {
           if (!(await tx.category.findUnique({ where: { id: v.categoryId } })))
             throw new Error("ไม่พบหมวดหมู่ที่เลือก");
@@ -230,7 +255,7 @@ export async function POST(req: Request) {
         const recipes = await tx.subRecipe.findMany({
           include: { lines: true },
         });
-        explodeBom(
+        const uses = explodeBom(
           v.lines,
           recipes.map((r) => ({
             id: r.id,
@@ -242,6 +267,34 @@ export async function POST(req: Request) {
             })),
           })),
         );
+        const ingredients = await tx.ingredient.findMany({
+          where: {
+            id: {
+              in: [
+                ...uses.keys(),
+                ...(v.packaging ?? []).map((p) => p.ingredientId),
+              ],
+            },
+          },
+        });
+        if (
+          [
+            ...uses.keys(),
+            ...(v.packaging ?? []).map((p) => p.ingredientId),
+          ].some((id) => !ingredients.some((i) => i.id === id && i.active))
+        )
+          throw new Error("มีวัตถุดิบที่ไม่พบหรือปิดใช้งาน กรุณาเลือกใหม่");
+        if (v.packaging) {
+          if (
+            new Set(v.packaging.map((p) => `${p.channel}:${p.ingredientId}`))
+              .size !== v.packaging.length
+          )
+            throw new Error("บรรจุภัณฑ์ซ้ำในช่องทางเดียวกัน");
+          await tx.packagingRule.deleteMany({ where: { menuItemId: v.id } });
+          await tx.packagingRule.createMany({
+            data: v.packaging.map((p) => ({ ...p, menuItemId: v.id })),
+          });
+        }
         await tx.bomLine.deleteMany({ where: { menuItemId: v.id } });
         for (const l of v.lines) {
           const unit = l.ingredientId
@@ -257,6 +310,22 @@ export async function POST(req: Request) {
               ).outputUnit;
           await tx.bomLine.create({ data: { menuItemId: v.id, ...l, unit } });
         }
+      }
+      if (v.kind === "deleteBom") {
+        entityId = v.id;
+        const current = await tx.menuItem.findUniqueOrThrow({
+          where: { id: v.id },
+          include: { bom: true, packaging: true },
+        });
+        before = current;
+        if (recipeVersion(current) !== v.expectedVersion)
+          throw new Error("สูตรถูกเปลี่ยนจากเครื่องอื่น กรุณาโหลดข้อมูลใหม่");
+        await tx.bomLine.deleteMany({ where: { menuItemId: v.id } });
+        await tx.packagingRule.deleteMany({ where: { menuItemId: v.id } });
+        await tx.menuItem.update({
+          where: { id: v.id },
+          data: { isActive: false },
+        });
       }
       if (v.kind === "settings") {
         entityId = "store";

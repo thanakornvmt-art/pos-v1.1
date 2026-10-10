@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { MenuImages } from "@/components/menu-images";
 import { MenuCatalogEditor } from "@/components/menu-catalog-editor";
+import { MenuRecipes } from "@/components/menu-recipes";
 export default function Manage() {
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -32,7 +33,6 @@ export default function Manage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [ingredient, setIngredient] = useState<IngredientInput | null>(null);
   const [recipe, setRecipe] = useState<RecipeInput | null>(null);
-  const [bom, setBom] = useState<AdminData["menus"][number] | null>(null);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState<{
     title: string;
@@ -56,7 +56,6 @@ export default function Manage() {
       setConfirmation(null);
       setIngredient(null);
       setRecipe(null);
-      setBom(null);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "บันทึกไม่ได้");
@@ -389,25 +388,17 @@ export default function Manage() {
               ))}
             </select>
           </label>
-          <div className="grid gap-3 md:grid-cols-3">
-            {data.menus
-              .filter(
-                (m) =>
-                  categoryFilter === "all" || m.categoryId === categoryFilter,
-              )
-              .map((m) => (
-                <Button key={m.id} variant="outline" onClick={() => setBom(m)}>
-                  {m.name}
-                </Button>
-              ))}
-          </div>
-          {!data.menus.some(
-            (m) => categoryFilter === "all" || m.categoryId === categoryFilter,
-          ) && (
-            <p className="mt-4" role="status">
-              ยังไม่มีเมนูในหมวดหมู่นี้
-            </p>
-          )}
+          <MenuRecipes
+            data={data}
+            category={categoryFilter}
+            reload={async () => {
+              const result = await query.refetch();
+              if (result.error) throw result.error;
+              await queryClient.invalidateQueries({
+                queryKey: ["availability"],
+              });
+            }}
+          />
         </section>
       )}
       {tab === "profit" && (
@@ -694,50 +685,6 @@ export default function Manage() {
         )}
       </Dialog>
       <Dialog
-        open={Boolean(bom)}
-        onOpenChange={(o) => {
-          if (!o) setBom(null);
-        }}
-        title={bom ? `BOM · ${bom.name}` : "BOM"}
-        wide
-      >
-        {bom && (
-          <div className="space-y-4">
-            <label>
-              หมวดหมู่เมนู
-              <select
-                value={bom.categoryId}
-                onChange={(e) => setBom({ ...bom, categoryId: e.target.value })}
-              >
-                {data.categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {lineEditor(bom.bom, (lines) => setBom({ ...bom, bom: lines }))}
-            <BomPreview data={data} menu={bom} />
-            <Button
-              onClick={() =>
-                setConfirmation({
-                  title: "ยืนยันเปลี่ยนสูตรเมนู?",
-                  payload: {
-                    kind: "bom",
-                    id: bom.id,
-                    categoryId: bom.categoryId,
-                    lines: bom.bom,
-                    confirmed: true,
-                  },
-                })
-              }
-            >
-              บันทึก BOM
-            </Button>
-          </div>
-        )}
-      </Dialog>
-      <Dialog
         open={Boolean(confirmation)}
         onOpenChange={(o) => {
           if (!o && !busy) setConfirmation(null);
@@ -766,23 +713,6 @@ export default function Manage() {
       )}
     </AdminShell>
   );
-}
-function BomPreview({
-  data,
-  menu,
-}: {
-  data: AdminData;
-  menu: AdminData["menus"][number];
-}) {
-  try {
-    return <MarginTable rows={costs(data, menu)} />;
-  } catch (e) {
-    return (
-      <p className="text-red-700">
-        {e instanceof Error ? e.message : "สูตรไม่ถูกต้อง"}
-      </p>
-    );
-  }
 }
 function MarginTable({
   rows,

@@ -1,12 +1,32 @@
 import { z } from "zod";
 import Decimal from "decimal.js";
-import { channelSchema, channels, quantitySchema, moneySchema } from "./schema";
+import {
+  channelSchema,
+  channels,
+  quantitySchema,
+  moneySchema,
+  groupSchema,
+} from "./schema";
 import { explodeBom } from "./inventory";
 import { roundMoney, suggestedDeliveryPrice } from "./pricing";
 export const positiveDecimal = quantitySchema.refine(
   (v) => new Decimal(v).gt(0),
   "ต้องมากกว่า 0",
 );
+export const recipeQuantitySchema = z
+  .string()
+  .regex(/^\d+(\.\d{1,6})?$/, "ใส่จำนวนไม่เกิน 6 ตำแหน่งทศนิยม")
+  .refine(
+    (v) => Number(v) > 0 && Number(v) < 1e12,
+    "จำนวนต้องมากกว่า 0 และน้อยกว่า 1 ล้านล้าน",
+  );
+export const packagingLineSchema = z
+  .object({
+    channel: channelSchema,
+    ingredientId: z.string().min(1, "กรุณาเลือกบรรจุภัณฑ์"),
+    qty: recipeQuantitySchema,
+  })
+  .strict();
 export const ingredientSchema = z
   .object({
     id: z.string().min(1),
@@ -27,9 +47,9 @@ export const ingredientSchema = z
   .strict();
 export const recipeLineSchema = z
   .object({
-    ingredientId: z.string().nullable(),
-    subRecipeId: z.string().nullable(),
-    qty: positiveDecimal,
+    ingredientId: z.string().min(1).nullable(),
+    subRecipeId: z.string().min(1).nullable(),
+    qty: recipeQuantitySchema,
   })
   .strict()
   .refine(
@@ -101,6 +121,9 @@ export const adminSchema = z.object({
       id: z.string(),
       name: z.string(),
       categoryId: z.string(),
+      sku: z.string().default(""),
+      groups: z.array(groupSchema).default([]),
+      recipeVersion: z.string().optional(),
       isActive: z.boolean(),
       soldOut: z.boolean(),
       imageUrl: z.string(),
@@ -134,7 +157,11 @@ export const adminSchema = z.object({
 export type AdminData = z.infer<typeof adminSchema>;
 export type IngredientInput = z.infer<typeof ingredientSchema>;
 export type RecipeInput = z.infer<typeof recipeSchema>;
-export function costs(data: AdminData, menu: AdminData["menus"][number]) {
+export function costs(
+  data: AdminData,
+  menu: AdminData["menus"][number],
+  optionIds: string[] = [],
+) {
   const uses = explodeBom(menu.bom, data.recipes);
   let food = new Decimal(0);
   for (const [id, qty] of uses) {
@@ -142,8 +169,20 @@ export function costs(data: AdminData, menu: AdminData["menus"][number]) {
     if (!i) throw new Error("ไม่พบวัตถุดิบในสูตร");
     food = food.plus(qty.mul(i.avgCost));
   }
+  const options = (menu.groups ?? [])
+    .flatMap((g) => g.items)
+    .filter((o) => optionIds.includes(o.id));
+  for (const o of options) {
+    if (o.ingredientId && o.qtyDelta) {
+      const ingredient = data.ingredients.find((i) => i.id === o.ingredientId);
+      if (!ingredient) throw new Error("ไม่พบวัตถุดิบในตัวเลือก");
+      food = food.plus(new Decimal(o.qtyDelta).mul(ingredient.avgCost));
+    }
+  }
   return channels.map((channel) => {
-    const price = menu.prices.find((p) => p.channel === channel)?.price ?? 0;
+    const price =
+      (menu.prices.find((p) => p.channel === channel)?.price ?? 0) +
+      options.reduce((n, o) => n + o.priceDelta, 0);
     const feeBps = data.fees.find((f) => f.channel === channel)?.feeBps ?? 0;
     const packaging = menu.packaging
       .filter((p) => p.channel === channel)
@@ -166,6 +205,7 @@ export function costs(data: AdminData, menu: AdminData["menus"][number]) {
       price,
       food: roundMoney(food),
       packaging: roundMoney(packaging),
+      totalCost: roundMoney(cost),
       net,
       profit: roundMoney(new Decimal(net).minus(cost)),
       foodCostBps: price ? roundMoney(food.div(price).mul(10000)) : null,
